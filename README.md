@@ -8,7 +8,7 @@ cpm が扱うのは、全プロジェクトで有効になる user スコープ�
 
 必要なもの: Claude Code(`claude` コマンドが PATH にあること)
 
-**macOS(Homebrew)**
+**Homebrew**
 
 ```sh
 brew tap ogontaro/cpm https://github.com/ogontaro/cpm
@@ -17,7 +17,7 @@ brew install ogontaro/cpm/cpm
 
 Homebrew の標準リポジトリには別物の `cpm` があります。必ず `ogontaro/cpm/` を付けてください。
 
-**Linux など(Bun)**
+**Bun**
 
 [Bun](https://bun.sh) の bunx で、インストールせずに GitHub から直接実行します。
 
@@ -27,8 +27,6 @@ bunx github:ogontaro/cpm#v0.2.0 sync   # バージョンを固定して実行す
 ```
 
 以降の例では `cpm` と書きます。bunx で使うときは、`cpm` を `bunx github:ogontaro/cpm` に読み替えてください。
-
-WSL では、WSL の中に Claude Code と Bun を入れてください。Windows 本体には対応していません。
 
 ## 始める
 
