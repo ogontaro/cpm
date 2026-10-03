@@ -21,14 +21,19 @@ interface RawManifest {
   includes: string[];
   marketplaces: string[];
   plugins: string[];
+  /** includes で取り込んだ plugin のうち、入れない plugin */
+  exclude: string[];
   autoUpdate?: boolean;
 }
 
 export interface Desired {
   marketplaces: MarketplaceSpec[];
   plugins: PluginSpec[];
-  /** cpm が追加した marketplace の自動更新。マニフェストの既定は true */
-  autoUpdate: boolean;
+  /**
+   * 管理下の marketplace の自動更新。省略時(undefined)は、新しく追加する marketplace だけを ON にし、
+   * 既にある marketplace の設定には触れない
+   */
+  autoUpdate: boolean | undefined;
 }
 
 /** `.json` は JSON、それ以外は YAML として読む */
@@ -51,7 +56,7 @@ export function parseManifest(text: string, file: string): RawManifest {
   if (autoUpdate !== undefined && typeof autoUpdate !== "boolean") {
     throw new Error(`${file}: autoUpdate は true か false で指定してください`);
   }
-  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), autoUpdate };
+  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), exclude: list("exclude"), autoUpdate };
 }
 
 interface Entry<T> {
@@ -73,6 +78,7 @@ interface Merged {
  *
  * - マニフェスト自身の marketplaces は、その includes から来た同じリポジトリの指定を上書きする。
  * - 別々の includes が、同じリポジトリを異なる ref で指定するときはエラーにする。
+ * - exclude に書いた plugin は、取り込んだ includes からも外す。
  */
 export async function resolveManifest(path: string, source: ManifestSource): Promise<Desired> {
   let text: string;
@@ -116,6 +122,13 @@ export async function resolveManifest(path: string, source: ManifestSource): Pro
       const spec = parsePlugin(raw);
       merged.plugins.set(spec.raw, { spec, origin: file });
     }
+    for (const raw of manifest.exclude) {
+      const { raw: id } = parsePlugin(raw);
+      if (manifest.plugins.some((p) => parsePlugin(p).raw === id)) {
+        throw new Error(`${file}: "${id}" が plugins と exclude の両方に指定されています`);
+      }
+      merged.plugins.delete(id);
+    }
     return merged;
   }
 
@@ -124,6 +137,6 @@ export async function resolveManifest(path: string, source: ManifestSource): Pro
     marketplaces: [...merged.marketplaces.values()].map((e) => e.spec),
     plugins: [...merged.plugins.values()].map((e) => e.spec),
     // 自動更新は、取り込んだマニフェストではなく、自分のマニフェストで決める
-    autoUpdate: parseManifest(text, path).autoUpdate ?? true,
+    autoUpdate: parseManifest(text, path).autoUpdate,
   };
 }

@@ -38,7 +38,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("parseManifest", () => {
   test("JSON と YAML を拡張子で読み分ける", () => {
-    const expected = { includes: [], marketplaces: ["o/r"], plugins: ["a@r"] };
+    const expected = { includes: [], marketplaces: ["o/r"], plugins: ["a@r"], exclude: [] };
     expect(parseManifest('{"marketplaces":["o/r"],"plugins":["a@r"]}', "cpm.json")).toEqual(expected);
     expect(parseManifest("marketplaces:\n  - o/r\nplugins:\n  - a@r\n", "cpm.yml")).toEqual(expected);
   });
@@ -88,6 +88,17 @@ describe("resolveManifest", () => {
     expect(r.plugins).toEqual(["a@m", "b@m"]);
   });
 
+  test("exclude に書いた plugin は、取り込んだ includes からも外れる", async () => {
+    remote["o/a/cpm.yml"] = "includes:\n  - o/b/cpm.yml\nplugins:\n  - a@m\n";
+    remote["o/b/cpm.yml"] = "plugins:\n  - b@m\n  - c@m\n";
+    const r = await resolve(local("includes:\n  - o/a/cpm.yml\nexclude:\n  - a@m\n  - b@m\n"));
+    expect(r.plugins).toEqual(["c@m"]);
+  });
+
+  test("plugins と exclude の両方に同じ plugin があるとエラーにする", async () => {
+    await expect(resolve(local("plugins:\n  - a@m\nexclude:\n  - a@m\n"))).rejects.toThrow("exclude");
+  });
+
   test("循環する includes はエラーにする", async () => {
     remote["o/a/cpm.yml"] = "includes:\n  - o/b/cpm.yml\n";
     remote["o/b/cpm.yml"] = "includes:\n  - o/a/cpm.yml\n";
@@ -98,12 +109,12 @@ describe("resolveManifest", () => {
     await expect(resolve(local("marketplaces:\n  - x/one#v1\n  - x/one#v2\n"))).rejects.toThrow("複数");
   });
 
-  test("autoUpdate は既定で true。自分のマニフェストの指定だけが有効", async () => {
-    expect((await resolveManifest(local("plugins: []\n"), source)).autoUpdate).toBe(true);
+  test("autoUpdate は省略できる。自分のマニフェストの指定だけが有効", async () => {
+    expect((await resolveManifest(local("plugins: []\n"), source)).autoUpdate).toBeUndefined();
     expect((await resolveManifest(local("autoUpdate: false\n"), source)).autoUpdate).toBe(false);
 
     remote["o/common/cpm.yml"] = "autoUpdate: false\n";
-    expect((await resolveManifest(local("includes:\n  - o/common/cpm.yml\n"), source)).autoUpdate).toBe(true);
+    expect((await resolveManifest(local("includes:\n  - o/common/cpm.yml\n"), source)).autoUpdate).toBeUndefined();
   });
 
   test("autoUpdate が真偽値でなければエラーにする", async () => {
