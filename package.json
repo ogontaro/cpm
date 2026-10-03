@@ -1,0 +1,17 @@
+{
+  "name": "cpm",
+  "version": "0.0.0",
+  "description": "Claude Code plugin manager driven by a declarative manifest",
+  "private": true,
+  "type": "module",
+  "bin": { "cpm": "src/cli.ts" },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build ./src/cli.ts --compile --outfile dist/cpm"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
