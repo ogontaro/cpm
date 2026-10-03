@@ -17,16 +17,16 @@ brew install ogontaro/cpm/cpm
 
 Homebrew の標準リポジトリには別物の `cpm` があります。必ず `ogontaro/cpm/` を付けてください。
 
-**Linux など(bunx)**
+**Linux など(Bun)**
 
-[Bun](https://bun.sh) があれば、インストールせずに実行できます。
+[Bun](https://bun.sh) の bunx で、インストールせずに GitHub から直接実行します。
 
 ```sh
-bunx @ogontaro/cpm sync          # 最新版を実行する
-bunx @ogontaro/cpm@0.1.0 sync    # バージョンを固定して実行する
+bunx github:ogontaro/cpm sync          # 最新版を実行する
+bunx github:ogontaro/cpm#v0.2.0 sync   # バージョンを固定して実行する
 ```
 
-以降の例では `cpm` と書きます。bunx で使うときは、`cpm` を `bunx @ogontaro/cpm` に読み替えてください。
+以降の例では `cpm` と書きます。bunx で使うときは、`cpm` を `bunx github:ogontaro/cpm` に読み替えてください。
 
 WSL では、WSL の中に Claude Code と Bun を入れてください。Windows 本体には対応していません。
 

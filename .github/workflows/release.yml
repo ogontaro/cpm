@@ -34,7 +34,11 @@ jobs:
             echo "::error::タグ '$TAG' は vX.Y.Z 形式ではありません"
             exit 1
           fi
-          npm pkg set version="${TAG#v}"
+          # bunx github:ogontaro/cpm#vX.Y.Z は、タグ時点の package.json の version を表示する
+          if [[ "$(jq -r .version package.json)" != "${TAG#v}" ]]; then
+            echo "::error::package.json の version を ${TAG#v} に上げてからリリースしてください"
+            exit 1
+          fi
           bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile cpm
       - name: Smoke test
         if: matrix.target == 'bun-linux-x64'
@@ -68,24 +72,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" artifacts/*.tar.gz artifacts/checksums.txt --clobber
-
-  # bunx @ogontaro/cpm で実行できるよう、npm に公開する。リポジトリの secret に NPM_TOKEN が必要
-  npm:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # --provenance 用
-    steps:
-      - uses: actions/checkout@v7
-      - name: Publish
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm pkg set version="${TAG#v}"
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          npm publish --provenance
 
   # このリポジトリ自体を Homebrew の tap として使う。Formula/cpm.rb を既定ブランチへ更新する
   formula:
