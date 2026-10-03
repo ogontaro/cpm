@@ -1,10 +1,22 @@
 {
-  "name": "cpm",
+  "name": "@ogontaro/cpm",
   "version": "0.0.0",
   "description": "Claude Code plugin manager driven by a declarative manifest",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ogontaro/cpm.git"
+  },
   "type": "module",
-  "bin": { "cpm": "src/cli.ts" },
+  "bin": {
+    "cpm": "src/cli.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",

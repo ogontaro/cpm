@@ -7,10 +7,10 @@ import { createClaude } from "./claude";
 import { githubManifests } from "./github";
 import { renderManifest } from "./init";
 import { resolveManifest } from "./manifest";
+import pkg from "../package.json";
 import { apply, findUnmanaged, plan, pruneState, readState, takeSnapshot, writeState, type Action } from "./sync";
 
-declare const CPM_VERSION: string | undefined;
-const VERSION = typeof CPM_VERSION === "string" ? CPM_VERSION : "dev";
+const VERSION = pkg.version;
 
 const HELP = `cpm - Claude Code の plugin をマニフェストから同期する
 

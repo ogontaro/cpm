@@ -17,18 +17,18 @@ brew install ogontaro/cpm/cpm
 
 Homebrew の標準リポジトリには別物の `cpm` があります。必ず `ogontaro/cpm/` を付けてください。
 
-**Linux(Ubuntu、WSL、Docker のイメージなど)**
+**Linux など(bunx)**
 
-リリースのバイナリを `/usr/local/bin` に置きます。
+[Bun](https://bun.sh) があれば、インストールせずに実行できます。
 
 ```sh
-# arm64 では cpm-linux-arm64.tar.gz を使います
-# バージョンを固定するときは、latest/download を download/v0.1.0 に置き換えます
-curl -fsSL https://github.com/ogontaro/cpm/releases/latest/download/cpm-linux-amd64.tar.gz \
-  | sudo tar -xz -C /usr/local/bin cpm
+bunx @ogontaro/cpm sync          # 最新版を実行する
+bunx @ogontaro/cpm@0.1.0 sync    # バージョンを固定して実行する
 ```
 
-WSL では、WSL の中に Claude Code と cpm を入れてください。Alpine などの musl 環境と、Windows 本体には対応していません。
+以降の例では `cpm` と書きます。bunx で使うときは、`cpm` を `bunx @ogontaro/cpm` に読み替えてください。
+
+WSL では、WSL の中に Claude Code と Bun を入れてください。Windows 本体には対応していません。
 
 ## 始める
 
