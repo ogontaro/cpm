@@ -1,0 +1,44 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE (#$NUMBER) $AUTHORS"
+change-title-escapes: '\<*_&'
+sync-labels: true
+
+template: |
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+# PRタイトルのConventional Commitsプレフィックス -> ラベル
+autolabeler:
+  - labels: ["breaking"]
+    title:
+      - '/^\w+(\(.+\))?!:/'
+  - labels: ["feat"]
+    title:
+      - '/^feat(\(.+\))?!?:/'
+  - labels: ["fix"]
+    title:
+      - '/^fix(\(.+\))?!?:/'
+
+categories:
+  - title: "Features"
+    when:
+      label: "feat"
+  - title: "Bug Fixes"
+    when:
+      label: "fix"
+  # feat / fix 以外のPR
+  - title: "Maintenance"
+
+  # バージョン解決: breaking -> major, feat -> minor, それ以外 -> patch
+  - type: "version-resolver"
+    semver-increment: "major"
+    when:
+      label: "breaking"
+  - type: "version-resolver"
+    semver-increment: "minor"
+    when:
+      label: "feat"
+  - type: "version-resolver"
+    semver-increment: "patch"

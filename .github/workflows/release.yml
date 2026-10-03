@@ -1,0 +1,103 @@
+name: Release
+
+# release-drafterの下書きをPublishすると起動する
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: bun-darwin-arm64
+            asset: darwin-arm64
+          - target: bun-darwin-x64
+            asset: darwin-amd64
+          - target: bun-linux-x64
+            asset: linux-amd64
+          - target: bun-linux-arm64
+            asset: linux-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5 # .mise.tomlのbunバージョンをそのまま使う(ローカル開発と揃える)
+      - run: bun install --frozen-lockfile
+      - name: Build
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::タグ '$TAG' は vX.Y.Z 形式ではありません"
+            exit 1
+          fi
+          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --define "CPM_VERSION=\"${TAG#v}\"" --outfile cpm
+      - name: Smoke test
+        if: matrix.target == 'bun-linux-x64'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: test "$(./cpm --version)" = "${TAG#v}"
+      - run: tar -czf cpm-${{ matrix.asset }}.tar.gz cpm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cpm-${{ matrix.asset }}
+          path: cpm-${{ matrix.asset }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create checksums.txt
+        run: |
+          cd artifacts
+          sha256sum -- *.tar.gz > checksums.txt
+      # リリースノートはrelease-drafterのものを残し、資産だけ追加する
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" artifacts/*.tar.gz artifacts/checksums.txt --clobber
+
+  # このリポジトリ自体を Homebrew の tap として使う。Formula/cpm.rb を既定ブランチへ更新する
+  formula:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Render formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$TAG" --pattern checksums.txt --dir "$RUNNER_TEMP"
+          mkdir -p Formula
+          .github/scripts/render-formula.sh "${TAG#v}" "$RUNNER_TEMP/checksums.txt" > Formula/cpm.rb
+          ruby -c Formula/cpm.rb
+      - name: Commit and push
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/cpm.rb
+          if git diff --cached --quiet; then
+            echo "Formula/cpm.rb に変更はありません"
+            exit 0
+          fi
+          git commit -m "chore: cpm ${TAG#v}"
+          git push

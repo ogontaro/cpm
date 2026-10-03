@@ -1,0 +1,37 @@
+class Cpm < Formula
+  desc "Claude Code plugin manager driven by a declarative manifest"
+  homepage "https://github.com/ogontaro/cpm"
+  version "@VERSION@"
+  license "MIT"
+
+  # homebrew-coreのcpm(CPANモジュールインストーラ)と同名のバイナリを入れる
+  conflicts_with "cpm", because: "both install a `cpm` binary"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-darwin-arm64.tar.gz"
+      sha256 "@SHA_DARWIN_ARM64@"
+    else
+      url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-darwin-amd64.tar.gz"
+      sha256 "@SHA_DARWIN_AMD64@"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-linux-arm64.tar.gz"
+      sha256 "@SHA_LINUX_ARM64@"
+    else
+      url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-linux-amd64.tar.gz"
+      sha256 "@SHA_LINUX_AMD64@"
+    end
+  end
+
+  def install
+    bin.install "cpm"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/cpm --version")
+  end
+end
