@@ -1,6 +1,6 @@
 # cpm
 
-Claude Code の plugin を、マニフェスト(`cpm.yml`)に書いた内容へ同期するコマンドラインツールです。家と会社のマシンや、チームのメンバー全員で、同じ plugin を揃えられます。
+cpm(Claude Plugin Manager)は、Claude Code の plugin を、マニフェスト(`cpm.yml`)に書いた内容へ同期するコマンドラインツールです。家と会社のマシンや、チームのメンバー全員で、同じ plugin を揃えられます。
 
 cpm が扱うのは、全プロジェクトで有効になる user スコープの plugin です。特定のリポジトリだけで使う plugin は、Claude Code 標準の project 設定(`.claude/settings.json`)で共有できます。
 
