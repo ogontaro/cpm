@@ -12,6 +12,7 @@ cpm が扱うのは、全プロジェクトで有効になる user スコープ�
 
 ```sh
 brew tap ogontaro/cpm https://github.com/ogontaro/cpm
+brew trust --tap ogontaro/cpm
 brew install ogontaro/cpm/cpm
 ```
 
