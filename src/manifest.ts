@@ -4,15 +4,18 @@ import {
   parseInclude,
   parseMarketplace,
   parsePlugin,
+  repoKey,
   type IncludeSpec,
   type MarketplaceSpec,
   type PluginSpec,
 } from "./spec";
 
+const includeKey = (inc: IncludeSpec): string => `${repoKey(inc.host, inc.owner, inc.repo)}/${inc.file}`;
+
 /** includes の入れ子の深さの上限 */
 const MAX_DEPTH = 5;
 
-/** 外部マニフェストのファイルを読む。本番は GitHub、テストでは差し替える */
+/** 外部マニフェストのファイルを読む。本番は GitHub / GitHub Enterprise、テストでは差し替える */
 export interface ManifestSource {
   readFile(include: IncludeSpec): Promise<string>;
 }
@@ -73,19 +76,24 @@ interface Merged {
 }
 
 /**
- * マニフェストを読み、includes で参照された外部マニフェストを再帰的に取り込んで、
+ * マニフェスト(ローカルのファイル、または GitHub 上のファイル)を読み、includes で参照された外部マニフェストを再帰的に取り込んで、
  * あるべき marketplace と plugin の一覧にする。
  *
  * - マニフェスト自身の marketplaces は、その includes から来た同じリポジトリの指定を上書きする。
  * - 別々の includes が、同じリポジトリを異なる ref で指定するときはエラーにする。
  * - exclude に書いた plugin は、取り込んだ includes からも外す。
  */
-export async function resolveManifest(path: string, source: ManifestSource): Promise<Desired> {
+export async function resolveManifest(root: string | IncludeSpec, source: ManifestSource): Promise<Desired> {
+  const path = typeof root === "string" ? root : root.raw;
   let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    throw new Error(`マニフェストを読み込めません: ${path}`);
+  if (typeof root === "string") {
+    try {
+      text = readFileSync(root, "utf8");
+    } catch {
+      throw new Error(`マニフェストを読み込めません: ${root}`);
+    }
+  } else {
+    text = await source.readFile(root);
   }
 
   async function load(body: string, file: string, trail: string[]): Promise<Merged> {
@@ -94,7 +102,7 @@ export async function resolveManifest(path: string, source: ManifestSource): Pro
 
     for (const raw of manifest.includes) {
       const inc = parseInclude(raw);
-      const key = `${inc.owner}/${inc.repo}/${inc.file}`;
+      const key = includeKey(inc);
       if (trail.includes(key)) throw new Error(`includes が循環しています: ${[...trail, key].join(" -> ")}`);
       if (trail.length >= MAX_DEPTH) throw new Error(`includes の入れ子が ${MAX_DEPTH} 段を超えています: ${raw}`);
 
@@ -132,7 +140,7 @@ export async function resolveManifest(path: string, source: ManifestSource): Pro
     return merged;
   }
 
-  const merged = await load(text, path, []);
+  const merged = await load(text, path, typeof root === "string" ? [] : [includeKey(root)]);
   return {
     marketplaces: [...merged.marketplaces.values()].map((e) => e.spec),
     plugins: [...merged.plugins.values()].map((e) => e.spec),

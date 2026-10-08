@@ -74,13 +74,26 @@ plugin の変更は、次のセッションの開始時か、`/reload-plugins` �
 
 | キー | 書き方 | 内容 |
 |---|---|---|
-| `marketplaces` | `owner/repo[#ref]` | GitHub 上の marketplace。`#ref` はタグかブランチ(コミット SHA は不可) |
+| `marketplaces` | `[host/]owner/repo[#ref]` | GitHub 上の marketplace。`#ref` はタグかブランチ(コミット SHA は不可) |
 | `plugins` | `plugin@marketplace` | インストールする plugin |
-| `includes` | `owner/repo/path/to/cpm.yml[#ref]` | 外部リポジトリのマニフェストを取り込む |
+| `includes` | `[host/]owner/repo/path/to/cpm.yml[#ref]` | 外部リポジトリのマニフェストを取り込む |
 | `exclude` | `plugin@marketplace` | 取り込んだマニフェストの plugin のうち、自分は入れないもの |
 | `autoUpdate` | `true` / `false` | 管理下のすべての marketplace を、Claude Code が自動で更新するか。省略すると、cpm が新しく追加する marketplace だけを ON にし、既存の設定はそのままにする |
 
 YAML(`.yml` / `.yaml`)と JSON(`.json`)のどちらでも書けます。
+
+### GitHub Enterprise
+
+先頭に GitHub Enterprise のホスト名を付けると、そのサーバーのリポジトリを指せます。`marketplaces` と `includes` の両方で使えます。
+
+```yaml
+includes:
+  - github.example.com/my-org/claude-config/cpm.yml#v2
+marketplaces:
+  - github.example.com/my-org/claude-plugins#v2
+```
+
+marketplace は `https://github.example.com/my-org/claude-plugins.git` として登録されます。
 
 ### バージョンの固定と更新
 
@@ -126,9 +139,25 @@ cpm が削除するのは、管理下のものだけです。マニフェスト(
 
 管理下の marketplace を外したり ref を変えたりすると、そこから手動で入れた plugin も外れます。対象の plugin は `--dry-run` の出力に表示されます。
 
+## クローンせずに実行する
+
+`--remote` を付けると、ローカルのマニフェストの代わりに、GitHub 上のマニフェストを直接読んで同期します。クローンは要りません。
+
+```sh
+cpm sync --remote my-org/claude-config/cpm.yml#v2
+cpm sync --remote github.example.com/my-org/claude-config/cpm.yml --dry-run
+```
+
+`--remote` は `sync` でだけ使え、`--manifest` とは同時に指定できません。
+
 ## 認証
 
-marketplace の取得は `claude` コマンドが行うので、git の認証設定がそのまま使われます。非公開リポジトリのマニフェストを `includes` で取り込むときは、`GITHUB_TOKEN` か `GH_TOKEN` を設定するか、`gh auth login` でログインしておいてください。
+marketplace の取得は `claude` コマンドが行うので、git の認証設定がそのまま使われます。非公開リポジトリのマニフェストを `includes` や `--remote` で読むときは、次のいずれかを用意してください。
+
+| 接続先 | 環境変数 | 未設定のとき |
+|---|---|---|
+| github.com | `GITHUB_TOKEN` / `GH_TOKEN` | `gh auth login` のログイン |
+| GitHub Enterprise | `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` | `gh auth login --hostname <host>` のログイン |
 
 ## できないこと
 

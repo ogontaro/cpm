@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Claude, MarketplaceInfo } from "./claude";
 import type { Desired } from "./manifest";
-import type { MarketplaceSpec } from "./spec";
+import { repoKeyFromUrl, type MarketplaceSpec } from "./spec";
 
 /** cpm が追加した marketplace と plugin の記録。ここに無いものには触れない */
 export const STATE_FILE = ".cpm-state.json";
@@ -77,6 +77,12 @@ export function findUnmanaged(snap: Snapshot, state: State): { marketplaces: str
   };
 }
 
+/** 登録済み marketplace のリポジトリの識別子。GitHub 以外なら null */
+export function marketplaceRepo(m: MarketplaceInfo): string | null {
+  if (m.source === "github") return m.repo ?? null;
+  return m.source === "git" && m.url ? repoKeyFromUrl(m.url) : null;
+}
+
 const marketOf = (id: string): string => id.slice(id.lastIndexOf("@") + 1);
 
 const missingMarketplace = (id: string, names: Iterable<string>): Error =>
@@ -91,7 +97,10 @@ const missingMarketplace = (id: string, names: Iterable<string>): Error =>
  */
 export function plan(desired: Desired, snap: Snapshot, state: State, opts: { update?: boolean } = {}): Action[] {
   const github = new Map<string, MarketplaceInfo>();
-  for (const m of snap.marketplaces) if (m.source === "github" && m.repo) github.set(m.repo, m);
+  for (const m of snap.marketplaces) {
+    const key = marketplaceRepo(m);
+    if (key) github.set(key, m);
+  }
 
   // marketplace を外すと、そこから手動で入れた plugin も外れる
   const manualPluginsOf = (name: string): string[] =>
@@ -207,7 +216,7 @@ export async function apply(
     if (!list.includes(value)) list.push(value);
   };
   const nameOf = async (spec: MarketplaceSpec): Promise<string> => {
-    const found = (await claude.listMarketplaces()).find((m) => m.source === "github" && m.repo === spec.repo);
+    const found = (await claude.listMarketplaces()).find((m) => marketplaceRepo(m) === spec.repo);
     if (!found) throw new Error(`marketplace "${spec.raw}" を登録できませんでした`);
     return found.name;
   };
@@ -253,11 +262,11 @@ export async function apply(
         await claude.removeMarketplace(action.name);
         dropMarketplace(action.name);
         writeState(configDir, state);
-        await claude.addMarketplace(action.spec.raw);
+        await claude.addMarketplace(action.spec.target);
         await register(action.spec);
         break;
       case "add-marketplace":
-        await claude.addMarketplace(action.spec.raw);
+        await claude.addMarketplace(action.spec.target);
         await register(action.spec);
         break;
       case "set-auto-update":

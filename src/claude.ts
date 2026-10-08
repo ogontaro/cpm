@@ -8,6 +8,8 @@ export interface MarketplaceInfo {
   source: string;
   /** source が github のときの owner/repo */
   repo?: string;
+  /** source が git のときの URL */
+  url?: string;
   ref?: string | null;
 }
 

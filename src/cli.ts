@@ -7,6 +7,7 @@ import { createClaude } from "./claude";
 import { githubManifests } from "./github";
 import { renderManifest } from "./init";
 import { resolveManifest } from "./manifest";
+import { parseInclude } from "./spec";
 import pkg from "../package.json";
 import { apply, findUnmanaged, plan, pruneState, readState, takeSnapshot, writeState, type Action } from "./sync";
 
@@ -16,8 +17,10 @@ const HELP = `cpm - Claude Code の plugin をマニフェストから同期す�
 
 使い方:
   cpm init [--manifest <path>]     今の環境からマニフェストを作る(既にあれば作らない)
-  cpm sync [--update] [--dry-run | --check] [--manifest <path>]
+  cpm sync [--update] [--dry-run | --check] [--manifest <path> | --remote <repo>]
                                    マニフェストの内容に揃える(追加・削除)
+                                   --remote: クローンせず、GitHub 上のマニフェストを直接読む
+                                             [host/]owner/repo/path/to/cpm.yml[#ref] (host は GitHub Enterprise)
                                    --update: marketplace と plugin を最新に更新する
                                    --check:  変更を表示するだけで、差分があれば終了コード 1 にする(CI 向け)
   cpm list                         cpm の管理下と管理外の marketplace・plugin を表示する
@@ -59,6 +62,7 @@ async function main(argv: string[]): Promise<number> {
     allowPositionals: true,
     options: {
       manifest: { type: "string" },
+      remote: { type: "string" },
       "dry-run": { type: "boolean", default: false },
       check: { type: "boolean", default: false },
       update: { type: "boolean", default: false },
@@ -80,6 +84,8 @@ async function main(argv: string[]): Promise<number> {
   const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
   const manifestPath = values.manifest ?? process.env.CPM_MANIFEST ?? join(configDir, "cpm.yml");
   const claude = createClaude(configDir);
+  if (values.remote && command !== "sync") throw new Error("--remote は sync でだけ使えます");
+  if (values.remote && values.manifest) throw new Error("--remote と --manifest は同時に指定できません");
 
   if (command === "init") {
     if (![".yml", ".yaml"].includes(extname(manifestPath))) {
@@ -108,7 +114,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "sync") {
-    const desired = await resolveManifest(manifestPath, githubManifests);
+    const desired = await resolveManifest(values.remote ? parseInclude(values.remote) : manifestPath, githubManifests);
     const snap = await takeSnapshot(claude);
     const stored = readState(configDir);
     const state = pruneState(stored, snap);

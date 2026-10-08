@@ -1,18 +1,19 @@
-import type { Snapshot } from "./sync";
+import { marketplaceRepo, type Snapshot } from "./sync";
 
 const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * 現在の環境から cpm.yml の本文を作る。
- * GitHub 以外の marketplace は書けないのでコメントで列挙する。その plugin は、marketplace を手動で登録したまま管理できるので plugins に出す
+ * GitHub(GitHub Enterprise を含む)以外の marketplace は書けないのでコメントで列挙する。その plugin は、marketplace を手動で登録したまま管理できるので plugins に出す
  */
 export function renderManifest(snap: Snapshot): string {
   const marketplaces: string[] = [];
   const unsupported: string[] = [];
   for (const m of [...snap.marketplaces].sort((a, b) => byName(a.name, b.name))) {
     // `#` を含む ref はマニフェストで書けない
-    if (m.source === "github" && m.repo && !m.ref?.includes("#")) {
-      marketplaces.push(m.ref ? `${m.repo}#${m.ref}` : m.repo);
+    const repo = marketplaceRepo(m);
+    if (repo && !m.ref?.includes("#")) {
+      marketplaces.push(m.ref ? `${repo}#${m.ref}` : repo);
     } else {
       unsupported.push(`${m.name} (${m.source})`);
     }

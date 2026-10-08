@@ -52,6 +52,15 @@ describe("renderManifest", () => {
     });
   });
 
+  test("GitHub Enterprise の marketplace は host を付けて出す", () => {
+    const text = renderManifest(
+      snapshot({
+        marketplaces: [{ name: "internal", source: "git", url: "https://ghe.example.com/acme/plugins.git", ref: "v1" }],
+      }),
+    );
+    expect(parseManifest(text, "cpm.yml").marketplaces).toEqual(["ghe.example.com/acme/plugins#v1"]);
+  });
+
   test("# を含む ref はマニフェストに書けないので、コメントに回す", () => {
     const text = renderManifest(
       snapshot({ marketplaces: [{ name: "odd", source: "github", repo: "o/odd", ref: "a#b" }] }),

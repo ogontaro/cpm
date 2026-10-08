@@ -28,12 +28,19 @@ class FakeClaude implements Claude {
   async autoUpdates() {
     // 本物と同じく、github の marketplace は settings.json に宣言があり、値だけが未設定になりうる
     return Object.fromEntries(
-      this.marketplaces.filter((m) => m.source === "github").map((m) => [m.name, this.auto[m.name]]),
+      this.marketplaces.filter((m) => m.source !== "directory").map((m) => [m.name, this.auto[m.name]]),
     );
   }
   async addMarketplace(source: string) {
     this.calls.push(`add ${source}`);
     const [repo = "", ref = null] = source.split("#");
+    if (repo.startsWith("https://")) {
+      // GitHub Enterprise は git の URL として登録される
+      if (!this.marketplaces.some((m) => m.url === repo)) {
+        this.marketplaces.push({ name: repo.split("/")[4]!.replace(/\.git$/, ""), source: "git", url: repo, ref });
+      }
+      return;
+    }
     const existing = this.marketplaces.find((m) => m.repo === repo);
     // 本物と同じく、marketplace add は自動更新の設定を消す
     if (existing) {
@@ -124,6 +131,13 @@ describe("追加と冪等性", () => {
 
     expect(await sync(desired)).toEqual([]);
     expect(fake.calls).toEqual([]);
+  });
+
+  test("GitHub Enterprise の marketplace は https の URL で登録し、登録済みなら再度追加しない", async () => {
+    const desired = want(["ghe.example.com/acme/mk#v1"], ["a@mk"]);
+    expect(await sync(desired)).toEqual(["add-marketplace ghe.example.com/acme/mk", "install a@mk"]);
+    expect(fake.calls).toEqual(["add https://ghe.example.com/acme/mk.git#v1", "auto mk=true", "install a@mk"]);
+    expect(await sync(desired)).toEqual([]);
   });
 
   test("marketplace 名が owner/repo と異なっていても、plugin@marketplace の名前で解決する", async () => {
