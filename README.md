@@ -6,8 +6,6 @@ cpm が扱うのは、全プロジェクトで有効になる user スコープ�
 
 ## インストール
 
-必要なもの: Claude Code(`claude` コマンドが PATH にあること)
-
 **Homebrew**
 
 ```sh
