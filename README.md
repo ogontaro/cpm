@@ -18,7 +18,7 @@ brew install ogontaro/cpm/cpm
 
 ```sh
 bunx github:ogontaro/cpm install          # 最新版を実行する
-bunx github:ogontaro/cpm#v1.0.0 install   # バージョンを固定して実行する
+bunx github:ogontaro/cpm#v0.3.0 install   # バージョンを固定して実行する
 ```
 
 以降の例では `cpm` と書きます。bunx で使うときは、`cpm` を `bunx github:ogontaro/cpm` に読み替えてください。
