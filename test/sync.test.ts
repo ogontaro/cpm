@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Claude, MarketplaceInfo } from "../src/claude";
 import type { Desired } from "../src/manifest";
 import { parseMarketplace, parsePlugin } from "../src/spec";
-import { apply, findUnmanaged, plan, pruneState, readState, takeSnapshot, type Action } from "../src/sync";
+import { apply, findUnmanaged, plan, planUninstall, pruneState, readState, takeSnapshot, type Action } from "../src/sync";
 
 const marketOf = (id: string) => id.slice(id.lastIndexOf("@") + 1);
 
@@ -148,7 +148,7 @@ describe("追加と冪等性", () => {
 });
 
 describe("削除", () => {
-  test("マニフェストから外した plugin だけを uninstall し、marketplace は残す", async () => {
+  test("cpm.yml から外した plugin だけを uninstall し、marketplace は残す", async () => {
     await sync(want(["o/mk"], ["a@mk", "b@mk"]));
     expect(await sync(want(["o/mk"], ["a@mk"]))).toEqual(["uninstall b@mk"]);
     expect([...fake.plugins]).toEqual(["a@mk"]);
@@ -219,7 +219,7 @@ describe("ref の変更", () => {
     const snap = await takeSnapshot(fake);
     expect(() => plan(want(["o/mk#v2"], []), snap, readState(configDir))).toThrow("管理外");
     expect(() => plan(want(["o/mk#v2"], []), snap, readState(configDir))).toThrow(
-      "`claude plugin marketplace remove mk` を実行してから、再度 sync してください",
+      "`claude plugin marketplace remove mk` を実行してから、再度 install してください",
     );
   });
 
@@ -272,12 +272,12 @@ describe("自動更新", () => {
     expect(fake.auto).toEqual({ mk: true });
   });
 
-  test("マニフェストで OFF にすると、OFF を設定する", async () => {
+  test("cpm.yml で OFF にすると、OFF を設定する", async () => {
     await sync(want(["o/mk"], ["a@mk"], false));
     expect(fake.auto).toEqual({ mk: false });
   });
 
-  test("マニフェストの設定を変えると、追加済みの marketplace にも反映する", async () => {
+  test("cpm.yml の設定を変えると、追加済みの marketplace にも反映する", async () => {
     await sync(want(["o/mk"], []));
     expect(await sync(want(["o/mk"], [], false))).toEqual(["auto mk=false"]);
     expect(await sync(want(["o/mk"], [], false))).toEqual([]);
@@ -297,7 +297,7 @@ describe("自動更新", () => {
     expect(fake.auto).toEqual({ mk: true });
   });
 
-  test("マニフェストで省略すると、追加する marketplace だけを ON にし、既存の設定には触れない", async () => {
+  test("cpm.yml で省略すると、追加する marketplace だけを ON にし、既存の設定には触れない", async () => {
     fake.marketplaces.push({ name: "old", source: "github", repo: "o/old", ref: null });
     fake.auto.old = false;
     const desired = { ...want(["o/old", "o/mk"], []), autoUpdate: undefined };
@@ -329,7 +329,7 @@ describe("管理外のもの", () => {
   });
 });
 
-describe("--update", () => {
+describe("update", () => {
   test("既に入っているものだけを更新し、今回追加したものは更新しない", async () => {
     await sync(want(["o/mk"], ["a@mk"]));
     expect(await sync(want(["o/mk"], ["a@mk", "b@mk"]), { update: true })).toEqual([
@@ -344,5 +344,57 @@ describe("--update", () => {
     const desired = want(["o/mk"], ["a@mk"]);
     await sync(desired);
     expect(await sync(desired)).toEqual([]);
+  });
+});
+
+describe("cleanup(空の cpm.yml との差分)", () => {
+  test("管理下の plugin と marketplace だけを削除し、管理外は残して記録を空にする", async () => {
+    fake.marketplaces.push({ name: "manual", source: "github", repo: "x/manual", ref: null });
+    fake.plugins.add("m@manual");
+    await sync(want(["o/mk"], ["a@mk"]));
+    fake.plugins.add("b@manual");
+    const state = readState(configDir);
+    state.plugins.push("b@manual"); // 管理外の marketplace に cpm が入れた plugin
+    const snap = await takeSnapshot(fake);
+    const actions = plan(want([], []), snap, state);
+    await apply(actions, { claude: fake, configDir, state, autoUpdate: undefined });
+    expect(actions.map(label)).toEqual(["uninstall b@manual", "remove mk"]);
+    expect([...fake.plugins]).toEqual(["m@manual"]);
+    expect(readState(configDir)).toEqual({ marketplaces: [], plugins: [] });
+  });
+});
+
+describe("planUninstall(plugin を 1 つ削除)", () => {
+  const run = async (id: string) => {
+    const snap = await takeSnapshot(fake);
+    const state = pruneState(readState(configDir), snap);
+    const actions = planUninstall(id, snap, state);
+    await apply(actions, { claude: fake, configDir, state, autoUpdate: undefined });
+    return actions.map(label);
+  };
+
+  test("marketplace に他の plugin が残るときは、plugin だけを削除して記録から外す", async () => {
+    await sync(want(["o/mk"], ["a@mk", "b@mk"]));
+    expect(await run("a@mk")).toEqual(["uninstall a@mk"]);
+    expect([...fake.plugins]).toEqual(["b@mk"]);
+    expect(readState(configDir)).toEqual({ marketplaces: ["mk"], plugins: ["b@mk"] });
+  });
+
+  test("最後の plugin なら、cpm の管理下の marketplace も削除する", async () => {
+    await sync(want(["o/mk"], ["a@mk"]));
+    expect(await run("a@mk")).toEqual(["uninstall a@mk", "remove mk"]);
+    expect(fake.marketplaces).toEqual([]);
+    expect(readState(configDir)).toEqual({ marketplaces: [], plugins: [] });
+  });
+
+  test("管理外の marketplace は残し、管理外の plugin は削除する", async () => {
+    fake.marketplaces.push({ name: "manual", source: "github", repo: "x/manual", ref: null });
+    fake.plugins.add("m@manual");
+    expect(await run("m@manual")).toEqual(["uninstall m@manual"]);
+    expect(fake.marketplaces.map((m) => m.name)).toEqual(["manual"]);
+  });
+
+  test("インストールされていなければエラーにする", async () => {
+    await expect(run("a@mk")).rejects.toThrow("インストールされていません");
   });
 });

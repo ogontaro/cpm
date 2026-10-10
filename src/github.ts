@@ -26,7 +26,7 @@ function token(host: string): string | null {
 
 const apiBase = (host: string): string => (host === GITHUB_HOST ? "https://api.github.com" : `https://${host}/api/v3`);
 
-/** 外部リポジトリのマニフェストを GitHub API(GitHub Enterprise は /api/v3)で読む */
+/** 外部リポジトリの cpm.yml を GitHub API(GitHub Enterprise は /api/v3)で読む */
 export const githubManifests: ManifestSource = {
   async readFile(include: IncludeSpec) {
     const query = include.ref ? `?ref=${encodeURIComponent(include.ref)}` : "";

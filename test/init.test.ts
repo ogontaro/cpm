@@ -61,7 +61,7 @@ describe("renderManifest", () => {
     expect(parseManifest(text, "cpm.yml").marketplaces).toEqual(["ghe.example.com/acme/plugins#v1"]);
   });
 
-  test("# を含む ref はマニフェストに書けないので、コメントに回す", () => {
+  test("# を含む ref は cpm.yml に書けないので、コメントに回す", () => {
     const text = renderManifest(
       snapshot({ marketplaces: [{ name: "odd", source: "github", repo: "o/odd", ref: "a#b" }] }),
     );

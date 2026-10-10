@@ -10,7 +10,7 @@ export function renderManifest(snap: Snapshot): string {
   const marketplaces: string[] = [];
   const unsupported: string[] = [];
   for (const m of [...snap.marketplaces].sort((a, b) => byName(a.name, b.name))) {
-    // `#` を含む ref はマニフェストで書けない
+    // `#` を含む ref は cpm.yml で書けない
     const repo = marketplaceRepo(m);
     if (repo && !m.ref?.includes("#")) {
       marketplaces.push(m.ref ? `${repo}#${m.ref}` : repo);
