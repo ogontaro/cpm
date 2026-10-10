@@ -29,10 +29,14 @@ export interface Claude {
   update(id: string): Promise<void>;
 }
 
-async function run(args: string[]): Promise<string> {
+async function run(configDir: string, args: string[]): Promise<string> {
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try {
-    proc = Bun.spawn(["claude", "plugin", ...args], { stdout: "pipe", stderr: "pipe" });
+    proc = Bun.spawn(["claude", "plugin", ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+    });
   } catch {
     throw new Error("claude コマンドが見つかりません。Claude Code をインストールして PATH を通してください");
   }
@@ -63,10 +67,10 @@ export function createClaude(configDir: string): Claude {
 
   return {
     async listMarketplaces() {
-      return JSON.parse(await run(["marketplace", "list", "--json"])) as MarketplaceInfo[];
+      return JSON.parse(await run(configDir, ["marketplace", "list", "--json"])) as MarketplaceInfo[];
     },
     async listPlugins() {
-      const plugins = JSON.parse(await run(["list", "--json"])) as { id: string; scope: string }[];
+      const plugins = JSON.parse(await run(configDir, ["list", "--json"])) as { id: string; scope: string }[];
       return plugins.filter((p) => p.scope === "user").map((p) => p.id);
     },
     async autoUpdates() {
@@ -74,13 +78,13 @@ export function createClaude(configDir: string): Claude {
       return Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, entry.autoUpdate]));
     },
     async addMarketplace(source) {
-      await run(["marketplace", "add", source]);
+      await run(configDir, ["marketplace", "add", source]);
     },
     async removeMarketplace(name) {
-      await run(["marketplace", "remove", name]);
+      await run(configDir, ["marketplace", "remove", name]);
     },
     async updateMarketplace(name) {
-      await run(["marketplace", "update", name]);
+      await run(configDir, ["marketplace", "update", name]);
     },
     async setAutoUpdate(name, value) {
       const settings = readSettings();
@@ -92,13 +96,13 @@ export function createClaude(configDir: string): Claude {
       renameSync(`${settingsFile}.tmp`, settingsFile);
     },
     async install(id) {
-      await run(["install", id, "--scope", "user"]);
+      await run(configDir, ["install", id, "--scope", "user"]);
     },
     async uninstall(id) {
-      await run(["uninstall", id, "--scope", "user"]);
+      await run(configDir, ["uninstall", id, "--scope", "user"]);
     },
     async update(id) {
-      await run(["update", id, "--scope", "user"]);
+      await run(configDir, ["update", id, "--scope", "user"]);
     },
   };
 }

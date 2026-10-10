@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseInclude } from "../src/spec";
-import { parseManifest, resolveManifest, type ManifestSource } from "../src/manifest";
+import { addToManifest, parseManifest, removeFromManifest, resolveManifest, type ManifestSource } from "../src/manifest";
 
 let dir: string;
 /** "host/owner/repo/file" -> ファイルの中身(外部リポジトリの代わり) */
@@ -44,6 +44,12 @@ describe("parseManifest", () => {
     expect(parseManifest("marketplaces:\n  - o/r\nplugins:\n  - a@r\n", "cpm.yml")).toEqual(expected);
   });
 
+  test("キーだけで中身が空でも、空のリストとして読む", () => {
+    const m = parseManifest("marketplaces:\nplugins:\n", "cpm.yml");
+    expect(m.marketplaces).toEqual([]);
+    expect(m.plugins).toEqual([]);
+  });
+
   test("文字列のリストでなければエラーにする", () => {
     expect(() => parseManifest("plugins: 1", "cpm.yml")).toThrow("plugins");
     expect(() => parseManifest("{", "cpm.json")).toThrow("解析できません");
@@ -56,7 +62,7 @@ describe("resolveManifest", () => {
     expect(r).toEqual({ marketplaces: ["o/r#v1"], plugins: ["a@r"] });
   });
 
-  test("外部マニフェストを取り込む。ref も取得時に渡す", async () => {
+  test("外部 cpm.yml を取り込む。ref も取得時に渡す", async () => {
     remote["github.com/o/common/cpm.json"] = '{"marketplaces":["x/one"],"plugins":["p@one"]}';
     const r = await resolve(local("includes:\n  - o/common/cpm.json#v2\nmarketplaces:\n  - y/two\nplugins:\n  - q@two\n"));
     expect(r).toEqual({ marketplaces: ["x/one", "y/two"], plugins: ["p@one", "q@two"] });
@@ -69,7 +75,7 @@ describe("resolveManifest", () => {
     expect(r.marketplaces).toEqual(["x/one#v2"]);
   });
 
-  test("別々の外部マニフェストが、同じリポジトリを異なる ref で指定するとエラーにする", async () => {
+  test("別々の外部 cpm.yml が、同じリポジトリを異なる ref で指定するとエラーにする", async () => {
     remote["github.com/o/a/cpm.yml"] = "marketplaces:\n  - x/one#v1\n";
     remote["github.com/o/b/cpm.yml"] = "marketplaces:\n  - x/one#v2\n";
     await expect(resolve(local("includes:\n  - o/a/cpm.yml\n  - o/b/cpm.yml\n"))).rejects.toThrow("異なる ref");
@@ -110,7 +116,7 @@ describe("resolveManifest", () => {
     await expect(resolve(local("marketplaces:\n  - x/one#v1\n  - x/one#v2\n"))).rejects.toThrow("複数");
   });
 
-  test("autoUpdate は省略できる。自分のマニフェストの指定だけが有効", async () => {
+  test("autoUpdate は省略できる。自分の cpm.yml の指定だけが有効", async () => {
     expect((await resolveManifest(local("plugins: []\n"), source)).autoUpdate).toBeUndefined();
     expect((await resolveManifest(local("autoUpdate: false\n"), source)).autoUpdate).toBe(false);
 
@@ -122,14 +128,14 @@ describe("resolveManifest", () => {
     await expect(resolve(local("autoUpdate: yes please\n"))).rejects.toThrow("autoUpdate");
   });
 
-  test("GitHub Enterprise の外部マニフェストと marketplace を取り込む", async () => {
+  test("GitHub Enterprise の外部 cpm.yml と marketplace を取り込む", async () => {
     remote["ghe.example.com/o/common/cpm.yml"] = "marketplaces:\n  - ghe.example.com/o/mk#v1\nplugins:\n  - p@mk\n";
     const r = await resolve(local("includes:\n  - ghe.example.com/o/common/cpm.yml#v2\n"));
     expect(r).toEqual({ marketplaces: ["ghe.example.com/o/mk#v1"], plugins: ["p@mk"] });
     expect(requested).toEqual(["ghe.example.com/o/common/cpm.yml#v2"]);
   });
 
-  test("GitHub 上のマニフェストを起点にして、ローカルのファイルなしで解決する", async () => {
+  test("GitHub 上の cpm.yml を起点にして、ローカルのファイルなしで解決する", async () => {
     remote["ghe.example.com/o/common/cpm.yml"] = "includes:\n  - o/base/cpm.yml\nmarketplaces:\n  - x/one\nautoUpdate: false\n";
     remote["github.com/o/base/cpm.yml"] = "plugins:\n  - b@one\n";
     const r = await resolveManifest(parseInclude("ghe.example.com/o/common/cpm.yml"), source);
@@ -138,12 +144,63 @@ describe("resolveManifest", () => {
     expect(r.autoUpdate).toBe(false);
   });
 
-  test("起点のマニフェストを自分自身で取り込むと循環としてエラーにする", async () => {
+  test("起点の cpm.yml を自分自身で取り込むと循環としてエラーにする", async () => {
     remote["github.com/o/a/cpm.yml"] = "includes:\n  - o/a/cpm.yml\n";
     await expect(resolveManifest(parseInclude("o/a/cpm.yml"), source)).rejects.toThrow("循環");
   });
 
-  test("マニフェストが無ければエラーにする", async () => {
+  test("cpm.yml が無ければエラーにする", async () => {
     await expect(resolve(join(dir, "none.yml"))).rejects.toThrow("読み込めません");
+  });
+});
+
+describe("addToManifest", () => {
+  test("既存のリストの末尾に、同じインデントで追記する", () => {
+    const text = "# memo\nmarketplaces:\n    - a/b\nplugins:\n    - x@a  # 説明\n    - y@a\n\nexclude: []\n";
+    expect(addToManifest(text, "plugins", "z@a")).toBe(
+      "# memo\nmarketplaces:\n    - a/b\nplugins:\n    - x@a  # 説明\n    - y@a\n    - z@a\n\nexclude: []\n",
+    );
+  });
+
+  test("`key: []` は block 形式に直す", () => {
+    expect(addToManifest("plugins: []\n", "plugins", "x@a")).toBe("plugins:\n  - x@a\n");
+  });
+
+  test("key が無ければ末尾に作る", () => {
+    expect(addToManifest("marketplaces:\n  - a/b\n", "plugins", "x@a")).toBe("marketplaces:\n  - a/b\nplugins:\n  - x@a\n");
+  });
+
+  test("既にあれば変更しない", () => {
+    const text = "plugins:\n  - x@a\n";
+    expect(addToManifest(text, "plugins", "x@a")).toBe(text);
+  });
+
+  test("flow 形式のリストはエラーにする", () => {
+    expect(() => addToManifest("plugins: [x@a]\n", "plugins", "y@a")).toThrow();
+  });
+});
+
+describe("removeFromManifest", () => {
+  test("該当する行だけを消し、コメントや並びは保つ", () => {
+    const text = "# memo\nmarketplaces:\n  - a/b\nplugins:\n  - x@a  # 説明\n  # 注釈\n  - \"y@a\"\n  - z@a\n\nexclude: []\n";
+    expect(removeFromManifest(text, "plugins", (i) => i === "x@a")).toBe(
+      "# memo\nmarketplaces:\n  - a/b\nplugins:\n  # 注釈\n  - \"y@a\"\n  - z@a\n\nexclude: []\n",
+    );
+    expect(removeFromManifest(text, "plugins", (i) => i === "y@a")).not.toContain("y@a");
+  });
+
+  test("他のキーのリストには触れない", () => {
+    const text = "marketplaces:\n  - x@a\nplugins:\n  - y@a\n";
+    expect(removeFromManifest(text, "plugins", (i) => i === "x@a")).toBe(text);
+  });
+
+  test("該当が無い・key が無い・`key: []` は変更しない", () => {
+    expect(removeFromManifest("plugins:\n  - x@a\n", "plugins", (i) => i === "y@a")).toBe("plugins:\n  - x@a\n");
+    expect(removeFromManifest("plugins: []\n", "plugins", () => true)).toBe("plugins: []\n");
+    expect(removeFromManifest("exclude: []\n", "plugins", () => true)).toBe("exclude: []\n");
+  });
+
+  test("flow 形式のリストはエラーにする", () => {
+    expect(() => removeFromManifest("plugins: [x@a]\n", "plugins", () => true)).toThrow();
   });
 });

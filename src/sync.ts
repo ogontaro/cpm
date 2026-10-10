@@ -69,7 +69,7 @@ export function pruneState(state: State, snap: Snapshot): State {
   };
 }
 
-/** 現在あるもののうち、cpm の記録に無いもの(sync しても削除されない) */
+/** 現在あるもののうち、cpm の記録に無いもの(install しても削除されない) */
 export function findUnmanaged(snap: Snapshot, state: State): { marketplaces: string[]; plugins: string[] } {
   return {
     marketplaces: snap.marketplaces.map((m) => m.name).filter((name) => !state.marketplaces.includes(name)),
@@ -89,10 +89,25 @@ const missingMarketplace = (id: string, names: Iterable<string>): Error =>
   new Error(`plugin "${id}" の marketplace "${marketOf(id)}" が見つかりません(登録済み: ${[...names].join(", ") || "なし"})`);
 
 /**
+ * plugin を 1 つ削除する操作を決める。管理外の plugin も、明示指定なので削除する。
+ * その marketplace に他の plugin が残らず、cpm の管理下の marketplace なら、marketplace も削除する。
+ */
+export function planUninstall(id: string, snap: Snapshot, state: State): Action[] {
+  if (!snap.plugins.includes(id)) throw new Error(`plugin "${id}" はインストールされていません(cpm list で確認できます)`);
+  const name = marketOf(id);
+  const actions: Action[] = [{ kind: "uninstall", id }];
+  const othersRemain = snap.plugins.some((p) => p !== id && marketOf(p) === name);
+  if (!othersRemain && snap.marketplaces.some((m) => m.name === name) && state.marketplaces.includes(name)) {
+    actions.push({ kind: "remove-marketplace", name, manualPlugins: [] });
+  }
+  return actions;
+}
+
+/**
  * あるべき状態と現在の状態から、行う操作を決める。変更は加えない。
  *
  * - cpm が追加したもの(記録にあるもの)だけを削除する。手動で追加されたものには触れない。
- * - マニフェストに書かれていて既に存在するもの(marketplace は同じリポジトリ・同じ ref)は、cpm の管理下に採用する。
+ * - cpm.yml に書かれていて既に存在するもの(marketplace は同じリポジトリ・同じ ref)は、cpm の管理下に採用する。
  * - 追加する marketplace が無いのに、plugin の参照先が無いときはエラーにする(dry-run でも気付ける)。
  */
 export function plan(desired: Desired, snap: Snapshot, state: State, opts: { update?: boolean } = {}): Action[] {
@@ -138,8 +153,8 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
     } else {
       throw new Error(
         `marketplace "${current.name}" (${spec.repo}) は cpm の管理外で、ref が異なります` +
-          `(登録済み: ${current.ref ?? "既定ブランチ"}、マニフェスト: ${spec.ref ?? "既定ブランチ"})。` +
-          `\`claude plugin marketplace remove ${current.name}\` を実行してから、再度 sync してください`,
+          `(登録済み: ${current.ref ?? "既定ブランチ"}、cpm.yml: ${spec.ref ?? "既定ブランチ"})。` +
+          `\`claude plugin marketplace remove ${current.name}\` を実行してから、再度 install してください`,
       );
     }
   }

@@ -2,7 +2,7 @@ export const GITHUB_HOST = "github.com";
 
 /** GitHub(github.com または GitHub Enterprise)上の取得先。ref が null なら既定ブランチ */
 export interface Ref {
-  /** マニフェストに書かれた文字列そのまま */
+  /** cpm.yml に書かれた文字列そのまま */
   raw: string;
   host: string;
   owner: string;
@@ -10,7 +10,7 @@ export interface Ref {
   ref: string | null;
 }
 
-/** 外部リポジトリにあるマニフェストファイル */
+/** 外部リポジトリにある cpm.yml ファイル */
 export interface IncludeSpec extends Ref {
   /** リポジトリ内のファイルパス */
   file: string;
