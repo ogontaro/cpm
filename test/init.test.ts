@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderManifest } from "../src/init";
 import { parseManifest } from "../src/manifest";
-import type { Snapshot } from "../src/sync";
+import type { Snapshot } from "../src/state";
 
 const snapshot = (partial: Partial<Snapshot>): Snapshot => ({ marketplaces: [], plugins: [], autoUpdate: {}, ...partial });
 

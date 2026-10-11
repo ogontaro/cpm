@@ -1,26 +1,7 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Claude, MarketplaceInfo } from "./claude";
 import type { Desired } from "./manifest";
-import { repoKeyFromUrl, type MarketplaceSpec } from "./spec";
-
-/** cpm が追加した marketplace と plugin の記録。ここに無いものには触れない */
-export const STATE_FILE = ".cpm-state.json";
-
-export interface State {
-  /** marketplace の名前 */
-  marketplaces: string[];
-  /** plugin@marketplace */
-  plugins: string[];
-}
-
-/** 現在の登録状況 */
-export interface Snapshot {
-  marketplaces: MarketplaceInfo[];
-  plugins: string[];
-  /** marketplace 名 -> 自動更新の設定値 */
-  autoUpdate: Record<string, boolean | undefined>;
-}
+import type { MarketplaceSpec } from "./spec";
+import { marketplaceRepo, writeState, type Snapshot, type State } from "./state";
 
 export type Action =
   | { kind: "adopt-marketplace"; name: string }
@@ -35,52 +16,31 @@ export type Action =
   | { kind: "install"; id: string }
   | { kind: "update"; id: string };
 
-export function readState(configDir: string): State {
-  try {
-    const doc = JSON.parse(readFileSync(join(configDir, STATE_FILE), "utf8")) as Partial<State>;
-    return { marketplaces: doc.marketplaces ?? [], plugins: doc.plugins ?? [] };
-  } catch {
-    return { marketplaces: [], plugins: [] };
+const manualNote = (ids: string[]): string => (ids.length ? `  (手動で入れた ${ids.join(", ")} も外れます)` : "");
+
+export function describe(a: Action): string {
+  switch (a.kind) {
+    case "add-marketplace":
+      return `+ marketplace ${a.spec.raw}`;
+    case "replace-marketplace":
+      return `~ marketplace ${a.spec.repo}  (${a.from ?? "既定ブランチ"} -> ${a.spec.ref ?? "既定ブランチ"})` + manualNote(a.manualPlugins);
+    case "set-auto-update":
+      return `~ marketplace ${a.name}  (自動更新: ${a.value ? "ON" : "OFF"})`;
+    case "update-marketplace":
+      return `~ marketplace ${a.spec.repo}  (最新に更新)`;
+    case "remove-marketplace":
+      return `- marketplace ${a.name}` + manualNote(a.manualPlugins);
+    case "adopt-marketplace":
+      return `= marketplace ${a.name}  (cpm の管理下に入れる)`;
+    case "adopt-plugin":
+      return `= plugin ${a.id}  (cpm の管理下に入れる)`;
+    case "install":
+      return `+ plugin ${a.id}`;
+    case "update":
+      return `~ plugin ${a.id}  (最新に更新)`;
+    case "uninstall":
+      return `- plugin ${a.id}`;
   }
-}
-
-export function writeState(configDir: string, state: State): void {
-  mkdirSync(configDir, { recursive: true });
-  const file = join(configDir, STATE_FILE);
-  writeFileSync(`${file}.tmp`, JSON.stringify(state, null, 2) + "\n");
-  renameSync(`${file}.tmp`, file);
-}
-
-export async function takeSnapshot(claude: Claude): Promise<Snapshot> {
-  return {
-    marketplaces: await claude.listMarketplaces(),
-    plugins: await claude.listPlugins(),
-    autoUpdate: await claude.autoUpdates(),
-  };
-}
-
-/** 既に存在しないものを記録から外す(手動で削除された場合など) */
-export function pruneState(state: State, snap: Snapshot): State {
-  const names = new Set(snap.marketplaces.map((m) => m.name));
-  const plugins = new Set(snap.plugins);
-  return {
-    marketplaces: state.marketplaces.filter((n) => names.has(n)),
-    plugins: state.plugins.filter((id) => plugins.has(id)),
-  };
-}
-
-/** 現在あるもののうち、cpm の記録に無いもの(install しても削除されない) */
-export function findUnmanaged(snap: Snapshot, state: State): { marketplaces: string[]; plugins: string[] } {
-  return {
-    marketplaces: snap.marketplaces.map((m) => m.name).filter((name) => !state.marketplaces.includes(name)),
-    plugins: snap.plugins.filter((id) => !state.plugins.includes(id)),
-  };
-}
-
-/** 登録済み marketplace のリポジトリの識別子。GitHub 以外なら null */
-export function marketplaceRepo(m: MarketplaceInfo): string | null {
-  if (m.source === "github") return m.repo ?? null;
-  return m.source === "git" && m.url ? repoKeyFromUrl(m.url) : null;
 }
 
 const marketOf = (id: string): string => id.slice(id.lastIndexOf("@") + 1);
@@ -224,9 +184,9 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
  */
 export async function apply(
   actions: Action[],
-  opts: { claude: Claude; configDir: string; state: State; autoUpdate: boolean | undefined },
+  opts: { claude: Claude; claudeDir: string; state: State; autoUpdate: boolean | undefined },
 ): Promise<void> {
-  const { claude, configDir, state } = opts;
+  const { claude, claudeDir, state } = opts;
   const claim = (list: string[], value: string) => {
     if (!list.includes(value)) list.push(value);
   };
@@ -276,7 +236,7 @@ export async function apply(
       case "replace-marketplace":
         await claude.removeMarketplace(action.name);
         dropMarketplace(action.name);
-        writeState(configDir, state);
+        writeState(claudeDir, state);
         await claude.addMarketplace(action.spec.target);
         await register(action.spec);
         break;
@@ -298,6 +258,6 @@ export async function apply(
         await claude.update(action.id);
         break;
     }
-    writeState(configDir, state);
+    writeState(claudeDir, state);
   }
 }
