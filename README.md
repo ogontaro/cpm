@@ -1,6 +1,6 @@
 # cpm
 
-cpm(Claude Plugin Manager)は、グローバル(user スコープ)の Claude Code plugin を `cpm.yml` で管理するツールです。入れたい plugin を `cpm.yml` に書いておけば、`cpm install` で Claude Code をその内容に合わせられるので、別のマシンでも同じ plugin を揃えられます。
+cpm(Claude Plugin Manager)は、グローバル(user スコープ)の Claude Code plugin を `cpm.yml` で管理するツールです。入れたい plugin を `cpm.yml` に書いておけば、`cpm install` で Claude Code をその内容に合わせられます。そのため、別のマシンでも同じ plugin を揃えられます。
 
 ## インストール
 
@@ -44,13 +44,13 @@ plugins:
 
 `cpm.yml` に書いた marketplace と plugin は、cpm の「管理下」に入ります。cpm が入れ替えたり削除したりするのは管理下のものだけで、`/plugin` で入れた plugin など管理下にないものには触りません。
 
-初回の `--dry-run` には `= plugin git-usage@ogontaro-skills  (cpm の管理下に入れる)` のような行が並びます。今入っているものを管理下に入れるという記録で、plugin の構成は変わりません。
+初回の `--dry-run` には `= plugin git-usage@ogontaro-skills  (cpm の管理下に入れる)` のような行が並びます。これは今入っているものを管理下に入れる記録で、plugin の構成は変わりません。
 
 plugin の変更は、次のセッションの開始時か、`/reload-plugins` の実行時に反映されます。
 
 ## 日常の使い方
 
-`cpm.yml` が正で、`cpm install` は Claude Code をその内容に合わせます。plugin の追加と削除は、コマンドで行えます。
+基準は `cpm.yml` で、`cpm install` は Claude Code をその内容に合わせます。plugin の追加と削除は、コマンドで行えます。
 
 ```sh
 cpm add git-usage@ogontaro-skills        # cpm.yml に追記してインストールする
@@ -63,9 +63,9 @@ cpm update                               # marketplace と plugin を最新に�
 - plugin は、Claude Code の `/plugin` で探せます。`plugin@marketplace` の `marketplace` には、登録済みの marketplace の名前か、`[host/]owner/repo[#ref]` を書きます。
 - marketplace の名前はリポジトリ名と違うことがあります(`ogontaro/skills` の名前は `ogontaro-skills`)。`cpm list` で確かめてください。
 - `cpm add` は、インストールに失敗すると `cpm.yml` への追記も取り消します。
-- `cpm uninstall` には、`cpm list` に表示される `plugin@marketplace` を渡します。その marketplace の最後の plugin だったときは、marketplace も削除します(管理下のものだけ)。
+- `cpm uninstall` には、`cpm list` に表示される `plugin@marketplace` を渡します。その plugin が管理下の marketplace の最後の plugin だったときは、marketplace も削除します。
 - `cpm install`、`cpm update`、`cpm uninstall`、`cpm cleanup` は、`--dry-run` で変更内容だけを表示できます。
-- `cpm install --check` は、変更内容を表示し、`cpm.yml` とずれていれば終了コード 1 を返します。CI で使えます。
+- `cpm install --check` は、変更内容を表示し、Claude Code の状態が `cpm.yml` とずれていれば終了コード 1 を返します。CI で使えます。
 
 `cpm.yml` を直接編集してから `cpm install` を実行することもできます。`cpm.yml` から消した plugin は、`cpm install` で削除されます。
 
@@ -100,7 +100,7 @@ plugins:
 
 ## 別のマシンで使う
 
-別のマシンでは、`cpm.yml` を `~/.claude/cpm.yml` に置いて `cpm install` を実行します。`.cpm-state.json`(cpm が入れたものの記録)はマシンごとのファイルなので、持っていかないでください。dotfiles などで Git 管理している場合は除外します。
+別のマシンでは、`cpm.yml` を `~/.claude/cpm.yml` に置いて `cpm install` を実行します。`.cpm-state.json`(cpm が入れたものの記録)はマシンごとのファイルなので、持っていかないでください。dotfiles などで Git 管理している場合は、このファイルを除外してください。
 
 GitHub 上の `cpm.yml` を、クローンせずに直接読むこともできます。
 
@@ -125,7 +125,7 @@ cpm install --remote github.example.com/my-org/claude-config/cpm.yml --dry-run
 
 ## git サーバーを指定する場合
 
-先頭にホスト名を付けると、GitHub 以外の git サーバーも指せます。
+先頭にホスト名を付けると、GitHub 以外の git サーバーも指定できます。
 
 ```yaml
 includes:
@@ -136,7 +136,7 @@ marketplaces:
 ```
 
 - `marketplaces` は git サーバーならどれでも使えます。`https://<host>/<owner>/<repo>.git` として登録されます。
-- `includes` と `--remote` は、GitHub(github.com と GitHub Enterprise)だけです。GitHub API で cpm.yml を取得するためです。
+- `includes` と `--remote` は、GitHub(github.com と GitHub Enterprise)でだけ使えます。GitHub API で cpm.yml を取得するためです。
 
 ## 認証
 
@@ -149,7 +149,7 @@ marketplace の取得は `claude` コマンドが行うので、git の認証設
 
 ## Claude のディレクトリを変える
 
-cpm は、Claude Code の設定ディレクトリ(既定は `~/.claude`)を操作します。`cpm.yml` と `.cpm-state.json` も、そのディレクトリの直下に置かれます。仕事用と個人用で Claude Code の環境を分けているときに使います。
+cpm は、Claude Code の設定ディレクトリ(既定は `~/.claude`)を操作します。`cpm.yml` と `.cpm-state.json` も、そのディレクトリの直下に置かれます。仕事用と個人用で Claude Code の環境を分けているときは、操作するディレクトリを次の方法で変えられます。
 
 | 指定 | 操作するディレクトリ |
 |---|---|
@@ -161,7 +161,7 @@ cpm は、Claude Code の設定ディレクトリ(既定は `~/.claude`)を操�
 cpm install --claude-dir ~/work/.claude   # 仕事用の Claude 環境を操作する
 ```
 
-指定したディレクトリには `claude` が設定ファイル(`.claude.json` など)を作ります。Claude Code 用の専用のディレクトリを指定してください。
+指定したディレクトリには `claude` が設定ファイル(`.claude.json` など)を作ります。Claude Code 専用のディレクトリを指定してください。
 
 ## できないこと
 
