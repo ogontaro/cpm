@@ -15,7 +15,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("claude には指定した config ディレクトリを CLAUDE_CONFIG_DIR で渡す", async () => {
+test("claude には指定した Claude のディレクトリを CLAUDE_CONFIG_DIR で渡す", async () => {
   // 受け取った CLAUDE_CONFIG_DIR を marketplace 名として返す偽の claude
   writeFileSync(join(dir, "claude"), `#!/bin/sh\necho "[{\\"name\\":\\"$CLAUDE_CONFIG_DIR\\",\\"source\\":\\"github\\"}]"\n`);
   chmodSync(join(dir, "claude"), 0o755);

@@ -29,13 +29,13 @@ export interface Claude {
   update(id: string): Promise<void>;
 }
 
-async function run(configDir: string, args: string[]): Promise<string> {
+async function run(claudeDir: string, args: string[]): Promise<string> {
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try {
     proc = Bun.spawn(["claude", "plugin", ...args], {
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+      env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir },
     });
   } catch {
     throw new Error("claude コマンドが見つかりません。Claude Code をインストールして PATH を通してください");
@@ -54,9 +54,9 @@ async function run(configDir: string, args: string[]): Promise<string> {
 
 type Settings = { extraKnownMarketplaces?: Record<string, { autoUpdate?: boolean } & Record<string, unknown>> } & Record<string, unknown>;
 
-/** user スコープの設定ファイル(`<設定ディレクトリ>/settings.json`)を使う実装 */
-export function createClaude(configDir: string): Claude {
-  const settingsFile = join(configDir, "settings.json");
+/** user スコープの設定ファイル(`<claudeDir>/settings.json`)を使う実装 */
+export function createClaude(claudeDir: string): Claude {
+  const settingsFile = join(claudeDir, "settings.json");
   const readSettings = (): Settings => {
     try {
       return JSON.parse(readFileSync(settingsFile, "utf8")) as Settings;
@@ -67,10 +67,10 @@ export function createClaude(configDir: string): Claude {
 
   return {
     async listMarketplaces() {
-      return JSON.parse(await run(configDir, ["marketplace", "list", "--json"])) as MarketplaceInfo[];
+      return JSON.parse(await run(claudeDir, ["marketplace", "list", "--json"])) as MarketplaceInfo[];
     },
     async listPlugins() {
-      const plugins = JSON.parse(await run(configDir, ["list", "--json"])) as { id: string; scope: string }[];
+      const plugins = JSON.parse(await run(claudeDir, ["list", "--json"])) as { id: string; scope: string }[];
       return plugins.filter((p) => p.scope === "user").map((p) => p.id);
     },
     async autoUpdates() {
@@ -78,31 +78,31 @@ export function createClaude(configDir: string): Claude {
       return Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, entry.autoUpdate]));
     },
     async addMarketplace(source) {
-      await run(configDir, ["marketplace", "add", source]);
+      await run(claudeDir, ["marketplace", "add", source]);
     },
     async removeMarketplace(name) {
-      await run(configDir, ["marketplace", "remove", name]);
+      await run(claudeDir, ["marketplace", "remove", name]);
     },
     async updateMarketplace(name) {
-      await run(configDir, ["marketplace", "update", name]);
+      await run(claudeDir, ["marketplace", "update", name]);
     },
     async setAutoUpdate(name, value) {
       const settings = readSettings();
       const entry = settings.extraKnownMarketplaces?.[name];
       if (!entry) throw new Error(`${settingsFile} に marketplace "${name}" の宣言が見つかりません`);
       entry.autoUpdate = value;
-      mkdirSync(configDir, { recursive: true });
+      mkdirSync(claudeDir, { recursive: true });
       writeFileSync(`${settingsFile}.tmp`, JSON.stringify(settings, null, 2) + "\n");
       renameSync(`${settingsFile}.tmp`, settingsFile);
     },
     async install(id) {
-      await run(configDir, ["install", id, "--scope", "user"]);
+      await run(claudeDir, ["install", id, "--scope", "user"]);
     },
     async uninstall(id) {
-      await run(configDir, ["uninstall", id, "--scope", "user"]);
+      await run(claudeDir, ["uninstall", id, "--scope", "user"]);
     },
     async update(id) {
-      await run(configDir, ["update", id, "--scope", "user"]);
+      await run(claudeDir, ["update", id, "--scope", "user"]);
     },
   };
 }
