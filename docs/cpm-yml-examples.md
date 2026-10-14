@@ -39,7 +39,7 @@ plugins:
 
 ## 外部の cpm.yml を読み込む
 
-`includes` で、GitHub 上のリポジトリにある `cpm.yml` を読み込みます。読み込んだ plugin のうち入れないものは、`exclude` に書きます。
+`includes` で、外部リポジトリにある `cpm.yml` を読み込みます。読み込んだ plugin のうち入れないものは、`exclude` に書きます。
 
 ```yaml
 includes:

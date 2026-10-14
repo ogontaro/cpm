@@ -26,7 +26,7 @@ cpm のすべてのコマンドとオプションの一覧です。
 |---|---|
 | `--dry-run` | 変更内容だけを表示する |
 | `--check` | 変更内容を表示し、Claude Code の状態が `cpm.yml` とずれていれば終了コード 1 を返す。CI で使える |
-| `--remote <repo>` | ローカルの `cpm.yml` の代わりに、GitHub 上の `cpm.yml` をクローンせずに直接読む。`<repo>` は `[host/]owner/repo/path/to/cpm.yml[#ref]` |
+| `--remote <repo>` | ローカルの `cpm.yml` の代わりに、リポジトリにある `cpm.yml` をクローンせずに直接読む。`<repo>` は `[host/]owner/repo/path/to/cpm.yml[#ref]` |
 
 ### cpm update
 
@@ -83,7 +83,7 @@ cpm のすべてのコマンドとオプションの一覧です。
 |---|---|
 | `--dry-run` | 変更内容だけを表示し、適用しない |
 | `--check` | 変更内容を表示し、差分があれば終了コード 1 を返す |
-| `--remote <repo>` | GitHub 上の `cpm.yml` を直接読む |
+| `--remote <repo>` | リポジトリにある `cpm.yml` を直接読む |
 | `--claude-dir <path>` | 操作する Claude のディレクトリ。既定は環境変数 `CLAUDE_CONFIG_DIR`、未設定なら `~/.claude`。`cpm.yml` と `.cpm-state.json` もこのディレクトリに置かれる |
 | `-v`, `--version` | cpm のバージョンを表示する |
 | `-h`, `--help` | ヘルプを表示する |
