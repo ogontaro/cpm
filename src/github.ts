@@ -42,7 +42,11 @@ export const githubManifests: ManifestSource = {
     const res = await fetch(url, { headers });
     if (!res.ok) {
       const hint = res.status === 404 ? "(ファイルまたは ref が存在しないか、権限がありません)" : "";
-      throw new Error(`"${include.raw}": GitHub API が ${res.status} を返しました ${hint}`.trim());
+      const auth = t ? "" : " / 認証トークン未取得(非公開リポジトリは404を返す)";
+      const body = (await res.text().catch(() => "")).trim();
+      throw new Error(
+        `"${include.raw}": GitHub API が ${res.status} を返しました ${hint}${auth}\n  要求: ${url}${body ? `\n  レスポンス: ${body.slice(0, 300)}` : ""}`,
+      );
     }
     return res.text();
   },
