@@ -16,30 +16,53 @@ export type Action =
   | { kind: "install"; id: string }
   | { kind: "update"; id: string };
 
+const paint = (code: number, text: string): string =>
+  process.stdout.isTTY && process.env.NO_COLOR === undefined ? `\x1b[${code}m${text}\x1b[0m` : text;
+const green = (text: string): string => paint(32, text);
+const red = (text: string): string => paint(31, text);
+const yellow = (text: string): string => paint(33, text);
+
 const manualNote = (ids: string[]): string => (ids.length ? `  (手動で入れた ${ids.join(", ")} も外れます)` : "");
 
 export function describe(a: Action): string {
   switch (a.kind) {
     case "add-marketplace":
-      return `+ marketplace ${a.spec.raw}`;
+      return `${green("+")} marketplace ${a.spec.raw}`;
     case "replace-marketplace":
-      return `~ marketplace ${a.spec.repo}  (${a.from ?? "既定ブランチ"} -> ${a.spec.ref ?? "既定ブランチ"})` + manualNote(a.manualPlugins);
+      return `${yellow("~")} marketplace ${a.spec.repo}  (${a.from ?? "既定ブランチ"} -> ${a.spec.ref ?? "既定ブランチ"})` + manualNote(a.manualPlugins);
     case "set-auto-update":
-      return `~ marketplace ${a.name}  (自動更新: ${a.value ? "ON" : "OFF"})`;
+      return `${yellow("~")} marketplace ${a.name}  (自動更新: ${a.value ? "ON" : "OFF"})`;
     case "update-marketplace":
-      return `~ marketplace ${a.spec.repo}  (最新に更新)`;
+      return `${yellow("~")} marketplace ${a.spec.repo}  (最新に更新)`;
     case "remove-marketplace":
-      return `- marketplace ${a.name}` + manualNote(a.manualPlugins);
+      return `${red("-")} marketplace ${a.name}` + manualNote(a.manualPlugins);
     case "adopt-marketplace":
       return `= marketplace ${a.name}  (cpm の管理下に入れる)`;
     case "adopt-plugin":
       return `= plugin ${a.id}  (cpm の管理下に入れる)`;
     case "install":
-      return `+ plugin ${a.id}`;
+      return `${green("+")} plugin ${a.id}`;
     case "update":
-      return `~ plugin ${a.id}  (最新に更新)`;
+      return `${yellow("~")} plugin ${a.id}  (最新に更新)`;
     case "uninstall":
-      return `- plugin ${a.id}`;
+      return `${red("-")} plugin ${a.id}`;
+  }
+}
+
+/** 更新前後が分かるときだけ差分を出し、分からなければ更新したことだけ伝える */
+const updateLine = (kind: "marketplace" | "plugin", name: string, before?: string, after?: string): string =>
+  before && after && before !== after
+    ? `${yellow("~")} ${kind} ${name}  ${red(before)} -> ${green(after)}`
+    : `${yellow("~")} ${kind} ${name}  (更新しました)`;
+
+/** git リポジトリの HEAD(短縮)。git が無い・リポジトリでない・失敗時は undefined */
+async function readGitHead(dir: string): Promise<string | undefined> {
+  try {
+    const proc = Bun.spawn(["git", "-C", dir, "rev-parse", "--short", "HEAD"], { stdout: "pipe", stderr: "ignore" });
+    const out = (await new Response(proc.stdout).text()).trim();
+    return (await proc.exited) === 0 && out ? out : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -184,17 +207,27 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
  */
 export async function apply(
   actions: Action[],
-  opts: { claude: Claude; claudeDir: string; state: State; autoUpdate: boolean | undefined },
-): Promise<void> {
+  opts: {
+    claude: Claude;
+    claudeDir: string;
+    state: State;
+    autoUpdate: boolean | undefined;
+    /** テスト用。既定は git の HEAD を読む */
+    gitHead?: (dir: string) => Promise<string | undefined>;
+  },
+): Promise<string[]> {
   const { claude, claudeDir, state } = opts;
+  const gitHead = opts.gitHead ?? readGitHead;
+  const results: string[] = [];
   const claim = (list: string[], value: string) => {
     if (!list.includes(value)) list.push(value);
   };
-  const nameOf = async (spec: MarketplaceSpec): Promise<string> => {
+  const findMarketplace = async (spec: MarketplaceSpec): Promise<MarketplaceInfo> => {
     const found = (await claude.listMarketplaces()).find((m) => marketplaceRepo(m) === spec.repo);
     if (!found) throw new Error(`marketplace "${spec.raw}" を登録できませんでした`);
-    return found.name;
+    return found;
   };
+  const nameOf = async (spec: MarketplaceSpec): Promise<string> => (await findMarketplace(spec)).name;
   // 追加した marketplace を所有として記録し、自動更新を設定する(marketplace add は自動更新の設定を消すため)
   const register = async (spec: MarketplaceSpec) => {
     const name = await nameOf(spec);
@@ -247,17 +280,28 @@ export async function apply(
       case "set-auto-update":
         await claude.setAutoUpdate(action.name, action.value);
         break;
-      case "update-marketplace":
-        await claude.updateMarketplace(await nameOf(action.spec));
+      case "update-marketplace": {
+        const marketplace = await findMarketplace(action.spec);
+        const before = marketplace.installLocation ? await gitHead(marketplace.installLocation) : undefined;
+        await claude.updateMarketplace(marketplace.name);
+        const after = marketplace.installLocation ? await gitHead(marketplace.installLocation) : undefined;
+        if (before && after && before !== after) results.push(updateLine("marketplace", action.spec.repo, before, after));
         break;
+      }
       case "install":
         await claude.install(action.id);
         claim(state.plugins, action.id);
         break;
-      case "update":
-        await claude.update(action.id);
+      case "update": {
+        const result = await claude.update(action.id);
+        if (result.updateOutcome === "updated") {
+          results.push(updateLine("plugin", action.id, result.oldVersion, result.newVersion));
+        }
         break;
+      }
     }
+    if (action.kind !== "update" && action.kind !== "update-marketplace") results.push(describe(action));
     writeState(claudeDir, state);
   }
+  return results;
 }

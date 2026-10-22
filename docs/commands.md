@@ -30,7 +30,7 @@ cpm のすべてのコマンドとオプションの一覧です。
 
 ### cpm update
 
-`cpm install` と同じく `cpm.yml` の内容に合わせたうえで、marketplace と plugin を最新に更新します。`#` でタグを指定した marketplace は、そのタグのままです。
+`cpm install` と同じく `cpm.yml` の内容に合わせたうえで、marketplace と plugin を最新に更新します。`#` でタグを指定した marketplace は、そのタグのままです。実行後は、変更のあった marketplace / plugin だけを `before -> after` で表示します。
 
 | オプション | 内容 |
 |---|---|

@@ -11,6 +11,15 @@ export interface MarketplaceInfo {
   /** source が git のときの URL */
   url?: string;
   ref?: string | null;
+  /** checkout 先。更新の前後を比べるのに使う */
+  installLocation?: string;
+}
+
+/** `claude plugin update <plugin> --json` の結果 */
+export interface UpdateResult {
+  updateOutcome?: string;
+  oldVersion?: string;
+  newVersion?: string;
 }
 
 /** `claude plugin` コマンドと、marketplace の自動更新設定。本番は実コマンド、テストでは差し替える */
@@ -26,7 +35,7 @@ export interface Claude {
   setAutoUpdate(name: string, value: boolean): Promise<void>;
   install(id: string): Promise<void>;
   uninstall(id: string): Promise<void>;
-  update(id: string): Promise<void>;
+  update(id: string): Promise<UpdateResult>;
 }
 
 async function run(claudeDir: string, args: string[]): Promise<string> {
@@ -102,7 +111,15 @@ export function createClaude(claudeDir: string): Claude {
       await run(claudeDir, ["uninstall", id, "--scope", "user"]);
     },
     async update(id) {
-      await run(claudeDir, ["update", id, "--scope", "user"]);
+      const stdout = await run(claudeDir, ["update", id, "--scope", "user", "--json"]);
+      // 生の stdout なので、末尾の JSON 行だけを読み、読めなければ結果なしとして扱う
+      const line = stdout.trim().split("\n").at(-1) ?? "";
+      try {
+        const parsed = JSON.parse(line) as UpdateResult | null;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
     },
   };
 }

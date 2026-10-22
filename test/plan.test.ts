@@ -45,11 +45,18 @@ async function install(desired: Desired, opts: { update?: boolean } = {}) {
   return actions.map(label);
 }
 
+let noColor: string | undefined;
 beforeEach(() => {
   claudeDir = mkdtempSync(join(tmpdir(), "cpm-plan-"));
   fake = new FakeClaude();
+  noColor = process.env.NO_COLOR;
+  process.env.NO_COLOR = "1"; // 結果行を色なしで比べる
 });
-afterEach(() => rmSync(claudeDir, { recursive: true, force: true }));
+afterEach(() => {
+  if (noColor === undefined) delete process.env.NO_COLOR;
+  else process.env.NO_COLOR = noColor;
+  rmSync(claudeDir, { recursive: true, force: true });
+});
 
 describe("追加と冪等性", () => {
   test("marketplace を追加して plugin をインストールし、再実行では何もしない", async () => {
@@ -263,6 +270,47 @@ describe("update", () => {
     const desired = want(["o/mk"], ["a@mk"]);
     await install(desired);
     expect(await install(desired)).toEqual([]);
+  });
+
+  test("変更のあった marketplace と plugin だけを結果として返す", async () => {
+    const desired = want(["o/mk"], ["a@mk", "b@mk"]);
+    await install(desired);
+    fake.marketplaces[0]!.installLocation = "/mk";
+    fake.updateResults["a@mk"] = { updateOutcome: "updated", oldVersion: "1.0.0", newVersion: "1.1.0" };
+    fake.updateResults["b@mk"] = { updateOutcome: "up-to-date", oldVersion: "2.0.0", newVersion: "2.0.0" };
+
+    const snap = await takeSnapshot(fake);
+    const state = pruneState(readState(claudeDir), snap);
+    const actions = plan(desired, snap, state, { update: true });
+    const heads = ["aaa", "bbb"];
+    let i = 0;
+    const results = await apply(actions, {
+      claude: fake,
+      claudeDir,
+      state,
+      autoUpdate: desired.autoUpdate,
+      gitHead: async () => heads[i++],
+    });
+    expect(results).toEqual(["~ marketplace o/mk  aaa -> bbb", "~ plugin a@mk  1.0.0 -> 1.1.0"]);
+  });
+
+  test("更新しても何も変わらなければ行を返さない", async () => {
+    const desired = want(["o/mk"], ["a@mk"]);
+    await install(desired);
+    fake.marketplaces[0]!.installLocation = "/mk";
+    fake.updateResults["a@mk"] = { updateOutcome: "up-to-date", oldVersion: "1.0.0", newVersion: "1.0.0" };
+
+    const snap = await takeSnapshot(fake);
+    const state = pruneState(readState(claudeDir), snap);
+    const actions = plan(desired, snap, state, { update: true });
+    const results = await apply(actions, {
+      claude: fake,
+      claudeDir,
+      state,
+      autoUpdate: desired.autoUpdate,
+      gitHead: async () => "same",
+    });
+    expect(results).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Claude, MarketplaceInfo } from "../src/claude";
+import type { Claude, MarketplaceInfo, UpdateResult } from "../src/claude";
 
 const marketOf = (id: string) => id.slice(id.lastIndexOf("@") + 1);
 
@@ -11,6 +11,8 @@ export class FakeClaude implements Claude {
   names: Record<string, string> = {};
   /** marketplace 名 -> settings.json の autoUpdate */
   auto: Record<string, boolean | undefined> = {};
+  /** plugin ID -> `claude plugin update --json` の結果 */
+  updateResults: Record<string, UpdateResult> = {};
 
   async listMarketplaces() {
     return this.marketplaces.map((m) => ({ ...m }));
@@ -69,5 +71,6 @@ export class FakeClaude implements Claude {
   }
   async update(id: string) {
     this.calls.push(`update ${id}`);
+    return this.updateResults[id] ?? {};
   }
 }

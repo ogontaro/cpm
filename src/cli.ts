@@ -74,14 +74,15 @@ async function list({ claude, claudeDir }: Context): Promise<number> {
   return 0;
 }
 
-/** 操作を適用する。操作が無くても、記録から消えたものがあれば記録を更新する */
-async function applyActions(ctx: Context, actions: Action[], stored: State, state: State, autoUpdate: boolean | undefined): Promise<void> {
+/** 操作を適用し、結果の行を返す。操作が無くても、記録から消えたものがあれば記録を更新する */
+async function applyActions(ctx: Context, actions: Action[], stored: State, state: State, autoUpdate: boolean | undefined): Promise<string[]> {
   const { claude, claudeDir } = ctx;
   if (actions.length) {
-    await apply(actions, { claude, claudeDir, state, autoUpdate });
+    return apply(actions, { claude, claudeDir, state, autoUpdate });
   } else if (JSON.stringify(stored) !== JSON.stringify(state)) {
     writeState(claudeDir, state);
   }
+  return [];
 }
 
 async function install(ctx: Context, update: boolean): Promise<number> {
@@ -90,16 +91,17 @@ async function install(ctx: Context, update: boolean): Promise<number> {
   const stored = readState(ctx.claudeDir);
   const state = pruneState(stored, snap);
   const actions = plan(desired, snap, state, { update });
-  for (const a of actions) console.log(describe(a));
 
   if (ctx.dryRun || ctx.check) {
+    for (const a of actions) console.log(describe(a));
     console.log(actions.length ? `\n${actions.length} 件の変更があります(未適用)` : "\n変更はありません");
     // 管理下への取り込みは記録だけの変更で、環境は cpm.yml どおりになっている
     const drift = actions.some((a) => a.kind !== "adopt-marketplace" && a.kind !== "adopt-plugin");
     return ctx.check && drift ? 1 : 0;
   }
-  await applyActions(ctx, actions, stored, state, desired.autoUpdate);
-  console.log(actions.length ? `\n${actions.length} 件を適用しました` : "\n変更はありません");
+  const results = await applyActions(ctx, actions, stored, state, desired.autoUpdate);
+  for (const line of results) console.log(line);
+  console.log(results.length ? `\n${results.length} 件を適用しました` : "\n変更はありません");
   return 0;
 }
 
@@ -132,15 +134,16 @@ async function add(ctx: Context, args: string[]): Promise<number> {
   }
 }
 
-/** 削除する操作を表示し、--dry-run でなければ適用する */
+/** 削除する操作を表示し、--dry-run でなければ適用して結果を表示する */
 async function remove(ctx: Context, actions: Action[], stored: State, state: State): Promise<number> {
-  for (const a of actions) console.log(describe(a));
   if (ctx.dryRun) {
+    for (const a of actions) console.log(describe(a));
     console.log(actions.length ? `\n${actions.length} 件を削除します(未適用)` : "\n削除するものはありません");
     return 0;
   }
-  await applyActions(ctx, actions, stored, state, undefined);
-  console.log(actions.length ? `\n${actions.length} 件を削除しました` : "\n削除するものはありません");
+  const results = await applyActions(ctx, actions, stored, state, undefined);
+  for (const line of results) console.log(line);
+  console.log(results.length ? `\n${results.length} 件を削除しました` : "\n削除するものはありません");
   return 0;
 }
 
