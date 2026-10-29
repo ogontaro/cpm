@@ -1,3 +1,12 @@
 [tools]
 # CI・リリースビルドとローカル開発でbunのバージョンを揃える(compile出力のバージョン依存を避ける)
 bun = "1.4.2"
+
+[tasks.test]
+run = "bun test"
+
+[tasks.typecheck]
+run = "bun run typecheck"
+
+[tasks.build]
+run = "bun run build"
