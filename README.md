@@ -91,7 +91,6 @@ cpm add git-usage@ogontaro-skills
 | `plugins` | `plugin@marketplace` | インストールする plugin |
 | `includes` | `[host/]owner/repo/path/to/cpm.yml[#ref]` | 外部リポジトリにある cpm.yml を読み込む |
 | `exclude` | `plugin@marketplace` | 読み込んだ cpm.yml の plugin のうち、自分は入れないもの |
-| `autoUpdate` | `true` / `false` | 管理対象のすべての marketplace を、Claude Code が自動で更新するか。省略すると、cpm が新しく追加する marketplace だけを ON にし、既存の設定はそのままにする |
 
 さまざまな構成の例は、[docs/cpm-yml-examples.md](docs/cpm-yml-examples.md) を参照してください。
 
@@ -117,6 +116,21 @@ cpm install --remote my-org/claude-config/cpm.yml#v2
 
 コマンドとオプションの一覧は、[docs/commands.md](docs/commands.md) を参照してください。
 
+## バージョンを固定する
+
+`cpm install` は、marketplace のコミットを `cpm.lock` に記録し、次回以降は同じコミットで揃えます。`cpm.lock` を `cpm.yml` と一緒に Git で共有すれば、どのマシンでも同じ plugin が入ります。ブランチに追従する marketplace も固定できます。
+
+| やりたいこと | コマンド |
+|---|---|
+| 初めて入れる | `cpm install`。marketplace の内容を表示し、承認すると `cpm.lock` に記録する |
+| 同じ状態を再現する | `cpm install`。`cpm.lock` のコミットで揃える |
+| 最新に上げる | `cpm update`。変更内容を表示し、承認すると `cpm.lock` を更新する |
+| ずれを検知する | `cpm install --check`。`cpm.lock` と実際のコミットが違えば終了コード 1 を返す |
+
+承認の画面には、変更されたファイルの数と、hooks・MCP 設定・スクリプトのファイルが表示されます。承認しなければ、`cpm.lock` のコミットのまま中止します。対話できない環境では `--yes` を付けると、内容を表示するだけで承認として進みます。
+
+固定の単位は marketplace です。固定したコミットを保つため、cpm は管理対象の marketplace の自動更新を OFF にします。
+
 ## plugin を削除する
 
 Claude Code にインストールされている plugin を削除する方法は、次の 2 つです。
@@ -135,6 +149,10 @@ cpm でインストールした plugin と marketplace をすべて削除する�
 `.cpm-state.json` は、cpm が入れた marketplace と plugin の記録で、Claude の設定ディレクトリ(既定は `~/.claude`)の直下に置かれます。cpm はこの記録にあるものを管理対象として扱い、`cpm.yml` から消えたものの削除や `cpm cleanup` の対象にします。`/plugin` で入れた plugin など、記録にないものには触りません。
 
 記録はマシンごとのファイルです。別のマシンでは、`cpm.yml` だけを `~/.claude/cpm.yml` に置いて `cpm install` を実行すれば、そのマシンの記録が作られます。`.cpm-state.json` は持っていかないでください。dotfiles などで Git 管理している場合は、このファイルを除外してください。
+
+## cpm.lock
+
+`cpm.lock` は、marketplace ごとに固定したコミットの記録で、`cpm.yml` と同じ Claude の設定ディレクトリの直下に置かれます。マシンに依存しないので、`cpm.yml` と一緒に Git で共有してください。`cpm.yml` から外した marketplace の記録は、`cpm install` が取り除きます。
 
 ## 認証
 

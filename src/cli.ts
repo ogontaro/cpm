@@ -7,6 +7,7 @@ import { createClaude, type Claude } from "./claude";
 import { addToManifest, removeFromManifest } from "./edit";
 import { githubManifests } from "./github";
 import { renderManifest } from "./init";
+import { createApprove, readLock, writeLock, type Lock } from "./lock";
 import { resolveManifest } from "./manifest";
 import { apply, describe, plan, planUninstall, type Action } from "./plan";
 import { parseInclude, parseMarketplace, parsePlugin } from "./spec";
@@ -19,12 +20,15 @@ const HELP = `cpm - Claude Code の plugin を cpm.yml から同期する
 
 使い方:
   cpm init                         今の環境から cpm.yml を作る(既にあれば作らない)
-  cpm install [--dry-run | --check | --remote <repo>]
-                                   cpm.yml の内容に揃える(追加・削除)
+  cpm install [--dry-run | --check | --remote <repo>] [--yes]
+                                   cpm.yml の内容に揃える(追加・削除)。marketplace は cpm.lock のコミットに固定する
+                                   cpm.lock に無い marketplace は、内容を表示して承認を求めてから記録する
+                                   --yes:    承認を求めず、表示だけして進める(対話できない環境向け)
                                    --remote: クローンせず、GitHub 上の cpm.yml を直接読む
                                              [host/]owner/repo/path/to/cpm.yml[#ref] (host は GitHub Enterprise)
                                    --check:  変更を表示するだけで、差分があれば終了コード 1 にする(CI 向け)
-  cpm update [--dry-run]           cpm.yml の内容に揃えつつ、marketplace と plugin を最新に更新する
+  cpm update [--dry-run] [--yes]   cpm.yml の内容に揃えつつ、marketplace と plugin を最新に更新する
+                                   コミットが変わる marketplace は、変更内容を表示して承認を求め、cpm.lock を更新する
   cpm add <plugin>@<marketplace>   cpm.yml に plugin を追記してインストールする
                                    <marketplace> は登録済みの名前、または [host/]owner/repo[#ref](未登録なら登録して marketplaces にも追記)
   cpm uninstall <plugin>@<marketplace> [--dry-run]
@@ -37,7 +41,7 @@ const HELP = `cpm - Claude Code の plugin を cpm.yml から同期する
 
 共通オプション:
   --claude-dir <path>              操作する Claude のディレクトリ(既定: $CLAUDE_CONFIG_DIR、未設定なら ~/.claude)
-                                   cpm.yml と .cpm-state.json もこのディレクトリに置かれる`;
+                                   cpm.yml、cpm.lock、.cpm-state.json もこのディレクトリに置かれる`;
 
 interface Context {
   claude: Claude;
@@ -46,6 +50,8 @@ interface Context {
   dryRun: boolean;
   check: boolean;
   remote: string | undefined;
+  /** lock への記録を、承認を求めずに進める */
+  yes: boolean;
 }
 
 /** cpm.yml は、常に Claude のディレクトリ直下に置く */
@@ -75,10 +81,10 @@ async function list({ claude, claudeDir }: Context): Promise<number> {
 }
 
 /** 操作を適用し、結果の行を返す。操作が無くても、記録から消えたものがあれば記録を更新する */
-async function applyActions(ctx: Context, actions: Action[], stored: State, state: State, autoUpdate: boolean | undefined): Promise<string[]> {
+async function applyActions(ctx: Context, actions: Action[], stored: State, state: State, lock?: Lock): Promise<string[]> {
   const { claude, claudeDir } = ctx;
   if (actions.length) {
-    return apply(actions, { claude, claudeDir, state, autoUpdate });
+    return apply(actions, { claude, claudeDir, state, lock, approve: lock && createApprove(ctx.yes) });
   } else if (JSON.stringify(stored) !== JSON.stringify(state)) {
     writeState(claudeDir, state);
   }
@@ -90,7 +96,8 @@ async function install(ctx: Context, update: boolean): Promise<number> {
   const snap = await takeSnapshot(ctx.claude);
   const stored = readState(ctx.claudeDir);
   const state = pruneState(stored, snap);
-  const actions = plan(desired, snap, state, { update });
+  const lock = readLock(ctx.claudeDir);
+  const actions = plan(desired, snap, state, { update, lock });
 
   if (ctx.dryRun || ctx.check) {
     for (const a of actions) console.log(describe(a));
@@ -99,9 +106,16 @@ async function install(ctx: Context, update: boolean): Promise<number> {
     const drift = actions.some((a) => a.kind !== "adopt-marketplace" && a.kind !== "adopt-plugin");
     return ctx.check && drift ? 1 : 0;
   }
-  const results = await applyActions(ctx, actions, stored, state, desired.autoUpdate);
+  const results = await applyActions(ctx, actions, stored, state, lock);
   for (const line of results) console.log(line);
   console.log(results.length ? `\n${results.length} 件を適用しました` : "\n変更はありません");
+  // cpm.yml から外した marketplace の記録を、lock から消す(--remote は別の cpm.yml なので、手元の lock には触れない)
+  const repos = new Set(desired.marketplaces.map((m) => m.repo));
+  const stale = Object.keys(lock).filter((repo) => !repos.has(repo));
+  if (!ctx.remote && stale.length) {
+    for (const repo of stale) delete lock[repo];
+    writeLock(ctx.claudeDir, lock);
+  }
   return 0;
 }
 
@@ -141,7 +155,7 @@ async function remove(ctx: Context, actions: Action[], stored: State, state: Sta
     console.log(actions.length ? `\n${actions.length} 件を削除します(未適用)` : "\n削除するものはありません");
     return 0;
   }
-  const results = await applyActions(ctx, actions, stored, state, undefined);
+  const results = await applyActions(ctx, actions, stored, state);
   for (const line of results) console.log(line);
   console.log(results.length ? `\n${results.length} 件を削除しました` : "\n削除するものはありません");
   return 0;
@@ -152,7 +166,7 @@ async function cleanup(ctx: Context): Promise<number> {
   const stored = readState(ctx.claudeDir);
   const state = pruneState(stored, snap);
   // 何も望まない cpm.yml との差分は、管理下のものすべての削除になる
-  return remove(ctx, plan({ marketplaces: [], plugins: [], autoUpdate: undefined }, snap, state), stored, state);
+  return remove(ctx, plan({ marketplaces: [], plugins: [] }, snap, state), stored, state);
 }
 
 async function uninstall(ctx: Context, args: string[]): Promise<number> {
@@ -199,6 +213,7 @@ async function main(argv: string[]): Promise<number> {
       remote: { type: "string" },
       "dry-run": { type: "boolean", default: false },
       check: { type: "boolean", default: false },
+      yes: { type: "boolean", default: false },
       version: { type: "boolean", short: "v", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -218,6 +233,7 @@ async function main(argv: string[]): Promise<number> {
   if (values.remote && command !== "install" && command !== "update") throw new Error("--remote は install でだけ使えます");
   if (command === "update" && (values.remote || values.check)) throw new Error("--remote と --check は update では使えません");
   if (["uninstall", "cleanup", "add"].includes(command) && values.check) throw new Error(`--check は ${command} では使えません`);
+  if (values.yes && !["install", "update", "add"].includes(command)) throw new Error("--yes は install・update・add でだけ使えます");
   if (command === "add" && values["dry-run"]) throw new Error("--dry-run は add では使えません");
 
   const ctx: Context = {
@@ -226,6 +242,7 @@ async function main(argv: string[]): Promise<number> {
     dryRun: values["dry-run"],
     check: values.check,
     remote: values.remote,
+    yes: values.yes,
   };
   switch (command) {
     case "init":

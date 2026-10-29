@@ -1,4 +1,5 @@
 import type { Claude, MarketplaceInfo, UpdateResult } from "../src/claude";
+import type { Git } from "../src/lock";
 
 const marketOf = (id: string) => id.slice(id.lastIndexOf("@") + 1);
 
@@ -42,7 +43,8 @@ export class FakeClaude implements Claude {
       delete this.auto[existing.name];
       return;
     }
-    this.marketplaces.push({ name: this.names[repo] ?? repo.split("/")[1]!, source: "github", repo, ref });
+    const name = this.names[repo] ?? repo.split("/")[1]!;
+    this.marketplaces.push({ name, source: "github", repo, ref, installLocation: `/${name}` });
   }
   async removeMarketplace(name: string) {
     this.calls.push(`remove ${name}`);
@@ -72,5 +74,23 @@ export class FakeClaude implements Claude {
   async update(id: string) {
     this.calls.push(`update ${id}`);
     return this.updateResults[id] ?? {};
+  }
+}
+
+/** marketplace の checkout を模した偽物。checkout 先(`/<marketplace 名>`)ごとに HEAD を持つ */
+export class FakeGit implements Git {
+  heads: Record<string, string> = {};
+  calls: string[] = [];
+
+  async head(dir: string) {
+    return (this.heads[dir] ??= "new0000");
+  }
+  async checkout(dir: string, commit: string) {
+    this.calls.push(`checkout ${commit}`);
+    this.heads[dir] = commit;
+  }
+  async changes(_dir: string, from: string | null, to: string) {
+    this.calls.push(`changes ${from}..${to}`);
+    return ["A\thooks/hooks.json", "M\tREADME.md"];
   }
 }

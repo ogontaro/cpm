@@ -13,6 +13,8 @@ export interface MarketplaceInfo {
   ref?: string | null;
   /** checkout 先。更新の前後を比べるのに使う */
   installLocation?: string;
+  /** installLocation の HEAD(40 桁)。cpm が git から読んで補う */
+  head?: string;
 }
 
 /** `claude plugin update <plugin> --json` の結果 */

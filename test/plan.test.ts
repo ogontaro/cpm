@@ -6,15 +6,15 @@ import type { Desired } from "../src/manifest";
 import { apply, plan, planUninstall, type Action } from "../src/plan";
 import { parseMarketplace, parsePlugin } from "../src/spec";
 import { pruneState, readState, takeSnapshot } from "../src/state";
-import { FakeClaude } from "./helpers";
+import { readLock, type Lock } from "../src/lock";
+import { FakeClaude, FakeGit } from "./helpers";
 
 let claudeDir: string;
 let fake: FakeClaude;
 
-const want = (marketplaces: string[], plugins: string[], autoUpdate = true): Desired => ({
+const want = (marketplaces: string[], plugins: string[]): Desired => ({
   marketplaces: marketplaces.map(parseMarketplace),
   plugins: plugins.map(parsePlugin),
-  autoUpdate,
 });
 
 const label = (a: Action): string => {
@@ -41,7 +41,7 @@ async function install(desired: Desired, opts: { update?: boolean } = {}) {
   const state = pruneState(readState(claudeDir), snap);
   const actions = plan(desired, snap, state, opts);
   fake.calls = [];
-  await apply(actions, { claude: fake, claudeDir, state, autoUpdate: desired.autoUpdate });
+  await apply(actions, { claude: fake, claudeDir, state });
   return actions.map(label);
 }
 
@@ -62,7 +62,7 @@ describe("追加と冪等性", () => {
   test("marketplace を追加して plugin をインストールし、再実行では何もしない", async () => {
     const desired = want(["o/mk#v1"], ["a@mk", "b@mk"]);
     expect(await install(desired)).toEqual(["add-marketplace o/mk", "install a@mk", "install b@mk"]);
-    expect(fake.calls).toEqual(["add o/mk#v1", "auto mk=true", "install a@mk", "install b@mk"]);
+    expect(fake.calls).toEqual(["add o/mk#v1", "auto mk=false", "install a@mk", "install b@mk"]);
     expect(readState(claudeDir)).toEqual({ marketplaces: ["mk"], plugins: ["a@mk", "b@mk"] });
 
     expect(await install(desired)).toEqual([]);
@@ -72,7 +72,7 @@ describe("追加と冪等性", () => {
   test("GitHub Enterprise の marketplace は https の URL で登録し、登録済みなら再度追加しない", async () => {
     const desired = want(["ghe.example.com/acme/mk#v1"], ["a@mk"]);
     expect(await install(desired)).toEqual(["add-marketplace ghe.example.com/acme/mk", "install a@mk"]);
-    expect(fake.calls).toEqual(["add https://ghe.example.com/acme/mk.git#v1", "auto mk=true", "install a@mk"]);
+    expect(fake.calls).toEqual(["add https://ghe.example.com/acme/mk.git#v1", "auto mk=false", "install a@mk"]);
     expect(await install(desired)).toEqual([]);
   });
 
@@ -119,7 +119,7 @@ describe("削除", () => {
   test("手動で既に入れた marketplace と plugin を宣言すると、まとめて採用する", async () => {
     fake.marketplaces.push({ name: "mk", source: "github", repo: "o/mk", ref: null });
     fake.plugins.add("a@mk");
-    expect(await install(want(["o/mk"], ["a@mk"]))).toEqual(["adopt-marketplace mk", "adopt-plugin a@mk", "auto mk=true"]);
+    expect(await install(want(["o/mk"], ["a@mk"]))).toEqual(["adopt-marketplace mk", "adopt-plugin a@mk", "auto mk=false"]);
     expect(readState(claudeDir)).toEqual({ marketplaces: ["mk"], plugins: ["a@mk"] });
 
     expect(await install(want([], []))).toEqual(["remove mk"]);
@@ -145,7 +145,7 @@ describe("ref の変更", () => {
   test("cpm が追加した marketplace の ref が変わると、置き換えて plugin を入れ直す", async () => {
     await install(want(["o/mk#v1"], ["a@mk"]));
     expect(await install(want(["o/mk#v2"], ["a@mk"]))).toEqual(["replace-marketplace o/mk", "install a@mk"]);
-    expect(fake.calls).toEqual(["remove mk", "add o/mk#v2", "auto mk=true", "install a@mk"]);
+    expect(fake.calls).toEqual(["remove mk", "add o/mk#v2", "auto mk=false", "install a@mk"]);
     expect(fake.marketplaces[0]?.ref).toBe("v2");
     expect(readState(claudeDir)).toEqual({ marketplaces: ["mk"], plugins: ["a@mk"] });
   });
@@ -161,7 +161,7 @@ describe("ref の変更", () => {
 
   test("手動で追加された marketplace と ref が同じなら、採用して使う", async () => {
     fake.marketplaces.push({ name: "mk", source: "github", repo: "o/mk", ref: "v1" });
-    expect(await install(want(["o/mk#v1"], ["a@mk"]))).toEqual(["adopt-marketplace mk", "auto mk=true", "install a@mk"]);
+    expect(await install(want(["o/mk#v1"], ["a@mk"]))).toEqual(["adopt-marketplace mk", "auto mk=false", "install a@mk"]);
     expect(readState(claudeDir).marketplaces).toEqual(["mk"]);
   });
 });
@@ -184,7 +184,7 @@ describe("検証", () => {
   test("参照先が無いときは、削除より前に止める", async () => {
     await install(want(["o/mk"], ["a@mk"]));
     await expect(install(want(["o/mk", "o/new"], ["b@missing"]))).rejects.toThrow('marketplace "missing" が見つかりません');
-    expect(fake.calls).toEqual(["add o/new", "auto new=true"]);
+    expect(fake.calls).toEqual(["add o/new", "auto new=false"]);
     expect([...fake.plugins]).toEqual(["a@mk"]);
   });
 
@@ -203,43 +203,25 @@ describe("検証", () => {
 });
 
 describe("自動更新", () => {
-  test("cpm が追加した marketplace は、既定で自動更新を ON にする", async () => {
+  test("cpm が追加した marketplace は、自動更新を OFF にする(lock のコミットを保つ)", async () => {
     await install(want(["o/mk"], ["a@mk"]));
-    expect(fake.auto).toEqual({ mk: true });
-  });
-
-  test("cpm.yml で OFF にすると、OFF を設定する", async () => {
-    await install(want(["o/mk"], ["a@mk"], false));
     expect(fake.auto).toEqual({ mk: false });
   });
 
-  test("cpm.yml の設定を変えると、追加済みの marketplace にも反映する", async () => {
-    await install(want(["o/mk"], []));
-    expect(await install(want(["o/mk"], [], false))).toEqual(["auto mk=false"]);
-    expect(await install(want(["o/mk"], [], false))).toEqual([]);
-    expect(await install(want(["o/mk"], [], true))).toEqual(["auto mk=true"]);
-  });
-
-  test("設定が消えていたら(marketplace add の影響など)、次の実行で直す", async () => {
+  test("ON になっていたり、設定が消えていたり(marketplace add の影響など)したら、次の実行で OFF に直す", async () => {
     const desired = want(["o/mk"], []);
     await install(desired);
+    fake.auto.mk = true;
+    expect(await install(desired)).toEqual(["auto mk=false"]);
     delete fake.auto.mk;
-    expect(await install(desired)).toEqual(["auto mk=true"]);
+    expect(await install(desired)).toEqual(["auto mk=false"]);
+    expect(await install(desired)).toEqual([]);
   });
 
-  test("採用した marketplace にも設定する", async () => {
+  test("採用した marketplace も OFF にする", async () => {
     fake.marketplaces.push({ name: "mk", source: "github", repo: "o/mk", ref: null });
     await install(want(["o/mk"], ["a@mk"]));
-    expect(fake.auto).toEqual({ mk: true });
-  });
-
-  test("cpm.yml で省略すると、追加する marketplace だけを ON にし、既存の設定には触れない", async () => {
-    fake.marketplaces.push({ name: "old", source: "github", repo: "o/old", ref: null });
-    fake.auto.old = false;
-    const desired = { ...want(["o/old", "o/mk"], []), autoUpdate: undefined };
-    await install(desired);
-    expect(fake.auto).toEqual({ old: false, mk: true });
-    expect(await install(desired)).toEqual([]);
+    expect(fake.auto).toEqual({ mk: false });
   });
 });
 
@@ -288,7 +270,6 @@ describe("update", () => {
       claude: fake,
       claudeDir,
       state,
-      autoUpdate: desired.autoUpdate,
       gitHead: async () => heads[i++],
     });
     expect(results).toEqual(["~ marketplace o/mk  aaa -> bbb", "~ plugin a@mk  1.0.0 -> 1.1.0"]);
@@ -307,7 +288,6 @@ describe("update", () => {
       claude: fake,
       claudeDir,
       state,
-      autoUpdate: desired.autoUpdate,
       gitHead: async () => "same",
     });
     expect(results).toEqual([]);
@@ -324,7 +304,7 @@ describe("cleanup(空の cpm.yml との差分)", () => {
     state.plugins.push("b@manual"); // 管理外の marketplace に cpm が入れた plugin
     const snap = await takeSnapshot(fake);
     const actions = plan(want([], []), snap, state);
-    await apply(actions, { claude: fake, claudeDir, state, autoUpdate: undefined });
+    await apply(actions, { claude: fake, claudeDir, state });
     expect(actions.map(label)).toEqual(["uninstall b@manual", "remove mk"]);
     expect([...fake.plugins]).toEqual(["m@manual"]);
     expect(readState(claudeDir)).toEqual({ marketplaces: [], plugins: [] });
@@ -336,7 +316,7 @@ describe("planUninstall(plugin を 1 つ削除)", () => {
     const snap = await takeSnapshot(fake);
     const state = pruneState(readState(claudeDir), snap);
     const actions = planUninstall(id, snap, state);
-    await apply(actions, { claude: fake, claudeDir, state, autoUpdate: undefined });
+    await apply(actions, { claude: fake, claudeDir, state });
     return actions.map(label);
   };
 
@@ -363,5 +343,108 @@ describe("planUninstall(plugin を 1 つ削除)", () => {
 
   test("インストールされていなければエラーにする", async () => {
     await expect(run("a@mk")).rejects.toThrow("インストールされていません");
+  });
+});
+
+describe("lock", () => {
+  const git = new FakeGit();
+  let lock: Lock;
+  let reviews: string[];
+  const approve = (answer: boolean) => async (review: string) => (reviews.push(review), answer);
+
+  beforeEach(() => {
+    git.heads = {};
+    git.calls = [];
+    lock = {};
+    reviews = [];
+  });
+
+  /** cpm install / update の 1 回分(lock あり) */
+  async function installLocked(desired: Desired, opts: { update?: boolean; answer?: boolean } = {}) {
+    const snap = await takeSnapshot(fake, git);
+    const state = pruneState(readState(claudeDir), snap);
+    const actions = plan(desired, snap, state, { update: opts.update, lock });
+    fake.calls = [];
+    await apply(actions, { claude: fake, claudeDir, state, lock, approve: approve(opts.answer ?? true), git });
+    return actions.map(label);
+  }
+
+  test("lock に無い marketplace は、変更内容を見せて承認を得てから記録する", async () => {
+    await installLocked(want(["o/mk"], ["a@mk"]));
+    expect(lock).toEqual({ "o/mk": { ref: null, commit: "new0000" } });
+    expect(readLock(claudeDir)).toEqual(lock);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toContain("hooks/hooks.json");
+    expect(fake.plugins.has("a@mk")).toBe(true);
+  });
+
+  test("承認されなければ、plugin を入れずに中止し、lock にも記録しない", async () => {
+    await expect(installLocked(want(["o/mk"], ["a@mk"]), { answer: false })).rejects.toThrow("承認されなかった");
+    expect(lock).toEqual({});
+    expect(fake.plugins.size).toBe(0);
+  });
+
+  test("lock にあるコミットには、承認なしで揃える", async () => {
+    lock = { "o/mk": { ref: null, commit: "locked1" } };
+    await installLocked(want(["o/mk"], ["a@mk"]));
+    expect(git.heads["/mk"]).toBe("locked1");
+    expect(reviews).toEqual([]);
+    expect(await installLocked(want(["o/mk"], ["a@mk"]))).toEqual([]);
+  });
+
+  test("checkout が lock とずれていたら、次の install で lock のコミットに戻す", async () => {
+    lock = { "o/mk": { ref: null, commit: "locked1" } };
+    const desired = want(["o/mk"], ["a@mk"]);
+    await installLocked(desired);
+    git.heads["/mk"] = "drift00";
+    expect(await installLocked(desired)).toEqual(["pin-marketplace o/mk"]);
+    expect(git.heads["/mk"]).toBe("locked1");
+  });
+
+  test("cpm.yml の ref を変えると、lock のコミットは使わず、改めて承認を得る", async () => {
+    lock = { "o/mk": { ref: null, commit: "locked1" } };
+    await installLocked(want(["o/mk#v2"], []));
+    expect(reviews).toHaveLength(1);
+    expect(lock["o/mk"]).toEqual({ ref: "v2", commit: "new0000" });
+  });
+
+  describe("update", () => {
+    /** claude plugin marketplace update が checkout を最新に進める */
+    const advance = () => {
+      fake.updateMarketplace = async (name) => {
+        fake.calls.push(`update-marketplace ${name}`);
+        git.heads["/mk"] = "newer00";
+      };
+    };
+
+    test("コミットが変わったら、差分の承認を得て lock を更新してから plugin を更新する", async () => {
+      lock = { "o/mk": { ref: null, commit: "locked1" } };
+      const desired = want(["o/mk"], ["a@mk"]);
+      await installLocked(desired);
+      advance();
+      await installLocked(desired, { update: true });
+      expect(lock["o/mk"]!.commit).toBe("newer00");
+      expect(reviews[0]).toContain("locked1 -> newer00");
+      expect(fake.calls).toEqual(["update-marketplace mk", "update a@mk"]);
+    });
+
+    test("承認されなければ、lock のコミットに戻し、plugin は更新しない", async () => {
+      lock = { "o/mk": { ref: null, commit: "locked1" } };
+      const desired = want(["o/mk"], ["a@mk"]);
+      await installLocked(desired);
+      advance();
+      await expect(installLocked(desired, { update: true, answer: false })).rejects.toThrow("承認されなかった");
+      expect(git.heads["/mk"]).toBe("locked1");
+      expect(lock["o/mk"]!.commit).toBe("locked1");
+      expect(fake.calls).toEqual(["update-marketplace mk"]);
+    });
+
+    test("コミットが変わらなければ、承認を求めない", async () => {
+      lock = { "o/mk": { ref: null, commit: "locked1" } };
+      const desired = want(["o/mk"], ["a@mk"]);
+      await installLocked(desired);
+      await installLocked(desired, { update: true });
+      expect(reviews).toEqual([]);
+    });
   });
 });

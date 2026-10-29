@@ -27,14 +27,18 @@ cpm のすべてのコマンドとオプションの一覧です。
 | `--dry-run` | 変更内容だけを表示する |
 | `--check` | 変更内容を表示し、Claude Code の状態が `cpm.yml` とずれていれば終了コード 1 を返す。CI で使える |
 | `--remote <repo>` | ローカルの `cpm.yml` の代わりに、リポジトリにある `cpm.yml` をクローンせずに直接読む。`<repo>` は `[host/]owner/repo/path/to/cpm.yml[#ref]` |
+| `--yes` | `cpm.lock` に無い marketplace の承認を求めず、内容を表示して進める。対話できない環境で使う |
+
+marketplace は `cpm.lock` のコミットに揃えます。`cpm.lock` に無い marketplace は、内容を表示して承認を求め、承認すると記録します。
 
 ### cpm update
 
-`cpm install` と同じく `cpm.yml` の内容に合わせたうえで、marketplace と plugin を最新に更新します。`#` でタグを指定した marketplace は、そのタグのままです。実行後は、変更のあった marketplace / plugin だけを `before -> after` で表示します。
+`cpm install` と同じく `cpm.yml` の内容に合わせたうえで、marketplace と plugin を最新に更新します。`#` でタグを指定した marketplace は、そのタグのままです。コミットが変わる marketplace は、変更内容を表示して承認を求め、承認すると `cpm.lock` を更新します。承認しなければ、`cpm.lock` のコミットに戻して中止します。実行後は、変更のあった marketplace / plugin だけを `before -> after` で表示します。
 
 | オプション | 内容 |
 |---|---|
 | `--dry-run` | 変更内容だけを表示する |
+| `--yes` | 承認を求めず、内容を表示して進める。対話できない環境で使う |
 
 ### cpm add
 

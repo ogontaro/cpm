@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Claude, MarketplaceInfo } from "./claude";
+import { realGit, type Git } from "./lock";
 import { repoKeyFromUrl } from "./spec";
 
 /** 状態ファイル(Claude のディレクトリ直下)。cpm が追加した marketplace と plugin を記録し、ここに無いものには触れない */
@@ -37,9 +38,11 @@ export function writeState(claudeDir: string, state: State): void {
   renameSync(`${file}.tmp`, file);
 }
 
-export async function takeSnapshot(claude: Claude): Promise<Snapshot> {
+export async function takeSnapshot(claude: Claude, git: Git = realGit): Promise<Snapshot> {
+  const marketplaces = await claude.listMarketplaces();
+  for (const m of marketplaces) m.head = m.installLocation ? await git.head(m.installLocation).catch(() => undefined) : undefined;
   return {
-    marketplaces: await claude.listMarketplaces(),
+    marketplaces,
     plugins: await claude.listPlugins(),
     autoUpdate: await claude.autoUpdates(),
   };

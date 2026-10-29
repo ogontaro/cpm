@@ -50,15 +50,3 @@ exclude:
 plugins:
   - git-usage@ogontaro-skills
 ```
-
-## 自動更新を設定する
-
-`autoUpdate` で、管理対象のすべての marketplace を Claude Code が自動で更新するかを決めます。
-
-```yaml
-autoUpdate: false
-marketplaces:
-  - ogontaro/skills
-plugins:
-  - git-usage@ogontaro-skills
-```

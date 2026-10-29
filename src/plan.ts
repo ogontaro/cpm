@@ -1,4 +1,5 @@
 import type { Claude, MarketplaceInfo } from "./claude";
+import { lockedCommit, realGit, renderReview, writeLock, type Git, type Lock } from "./lock";
 import type { Desired } from "./manifest";
 import type { MarketplaceSpec } from "./spec";
 import { marketplaceRepo, writeState, type Snapshot, type State } from "./state";
@@ -13,6 +14,8 @@ export type Action =
   | { kind: "add-marketplace"; spec: MarketplaceSpec }
   | { kind: "set-auto-update"; name: string; value: boolean }
   | { kind: "update-marketplace"; spec: MarketplaceSpec }
+  /** marketplace を lock のコミットに揃える。commit が null なら、今のコミットを lock に記録する */
+  | { kind: "pin-marketplace"; spec: MarketplaceSpec; commit: string | null }
   | { kind: "install"; id: string }
   | { kind: "update"; id: string };
 
@@ -34,6 +37,8 @@ export function describe(a: Action): string {
       return `${yellow("~")} marketplace ${a.name}  (自動更新: ${a.value ? "ON" : "OFF"})`;
     case "update-marketplace":
       return `${yellow("~")} marketplace ${a.spec.repo}  (最新に更新)`;
+    case "pin-marketplace":
+      return `= marketplace ${a.spec.repo}  (${a.commit ? `${a.commit.slice(0, 7)} に固定` : "lock に記録"})`;
     case "remove-marketplace":
       return `${red("-")} marketplace ${a.name}` + manualNote(a.manualPlugins);
     case "adopt-marketplace":
@@ -93,7 +98,7 @@ export function planUninstall(id: string, snap: Snapshot, state: State): Action[
  * - cpm.yml に書かれていて既に存在するもの(marketplace は同じリポジトリ・同じ ref)は、cpm の管理下に採用する。
  * - 追加する marketplace が無いのに、plugin の参照先が無いときはエラーにする(dry-run でも気付ける)。
  */
-export function plan(desired: Desired, snap: Snapshot, state: State, opts: { update?: boolean } = {}): Action[] {
+export function plan(desired: Desired, snap: Snapshot, state: State, opts: { update?: boolean; lock?: Lock } = {}): Action[] {
   const github = new Map<string, MarketplaceInfo>();
   for (const m of snap.marketplaces) {
     const key = marketplaceRepo(m);
@@ -110,6 +115,7 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
   const adds: Action[] = [];
   const replaces: Action[] = [];
   const marketUpdates: Action[] = [];
+  const pins: Action[] = [];
 
   for (const spec of desired.marketplaces) {
     const current = github.get(spec.repo);
@@ -123,7 +129,12 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
         adopts.push({ kind: "adopt-marketplace", name: current.name });
         owned.add(current.name);
       }
-      if (opts.update) marketUpdates.push({ kind: "update-marketplace", spec });
+      if (opts.update) {
+        marketUpdates.push({ kind: "update-marketplace", spec });
+      } else if (opts.lock) {
+        const commit = lockedCommit(opts.lock, spec);
+        if (commit === null || current.head !== commit) pins.push({ kind: "pin-marketplace", spec, commit });
+      }
     } else if (owned.has(current.name)) {
       replaces.push({
         kind: "replace-marketplace",
@@ -168,17 +179,11 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
     ? desired.plugins.filter((p) => installed.has(p.raw)).map((p) => ({ kind: "update", id: p.raw }))
     : [];
 
-  // 新しく追加・置き換えた marketplace は、apply の中で追加の直後に設定する
+  // 新しく追加・置き換えた marketplace は、apply の中で追加の直後に設定する。
+  // Claude Code の自動更新は lock のコミットを最新に戻すので、管理下の marketplace は常に OFF にする
   const autoUpdates: Action[] = [...kept]
-    .filter(
-      (name) =>
-        desired.autoUpdate !== undefined &&
-        owned.has(name) &&
-        !replaced.has(name) &&
-        name in snap.autoUpdate &&
-        snap.autoUpdate[name] !== desired.autoUpdate,
-    )
-    .map((name) => ({ kind: "set-auto-update", name, value: desired.autoUpdate! }));
+    .filter((name) => owned.has(name) && !replaced.has(name) && name in snap.autoUpdate && snap.autoUpdate[name] !== false)
+    .map((name) => ({ kind: "set-auto-update", name, value: false }));
 
   // 追加した marketplace の確認を挟めるよう、削除や置き換えは追加より後に行う
   return [
@@ -196,6 +201,7 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
     ...replaces,
     ...autoUpdates,
     ...marketUpdates,
+    ...pins,
     ...installs,
     ...updates,
   ];
@@ -211,13 +217,18 @@ export async function apply(
     claude: Claude;
     claudeDir: string;
     state: State;
-    autoUpdate: boolean | undefined;
+    /** 渡すと、marketplace を lock のコミットに揃え、lock に無い・変わったコミットは承認を得て記録する */
+    lock?: Lock;
+    /** lock に記録するコミットの内容を見せて、承認を得る */
+    approve?: (review: string) => Promise<boolean>;
     /** テスト用。既定は git の HEAD を読む */
     gitHead?: (dir: string) => Promise<string | undefined>;
+    git?: Git;
   },
 ): Promise<string[]> {
   const { claude, claudeDir, state } = opts;
   const gitHead = opts.gitHead ?? readGitHead;
+  const git = opts.git ?? realGit;
   const results: string[] = [];
   const claim = (list: string[], value: string) => {
     if (!list.includes(value)) list.push(value);
@@ -232,7 +243,27 @@ export async function apply(
   const register = async (spec: MarketplaceSpec) => {
     const name = await nameOf(spec);
     claim(state.marketplaces, name);
-    await claude.setAutoUpdate(name, opts.autoUpdate ?? true);
+    await claude.setAutoUpdate(name, false);
+  };
+  /**
+   * marketplace を lock のコミットに揃える。lock に無い、または更新で変わったコミットは、変更内容を見せて承認を得てから記録する。
+   * 承認されなければ lock のコミットに戻して止める
+   */
+  const pin = async (spec: MarketplaceSpec, updated: boolean) => {
+    const { lock, approve } = opts;
+    if (!lock || !approve) return;
+    const dir = (await findMarketplace(spec)).installLocation;
+    if (!dir) throw new Error(`marketplace "${spec.repo}" の checkout が見つかりません`);
+    const head = await git.head(dir);
+    const locked = lockedCommit(lock, spec);
+    if (locked === head) return;
+    if (locked && !updated) return git.checkout(dir, locked);
+    if (!(await approve(renderReview(spec.repo, locked, head, await git.changes(dir, locked, head))))) {
+      if (locked) await git.checkout(dir, locked);
+      throw new Error(`${spec.repo} の${locked ? "更新" : "固定"}が承認されなかったので中止しました`);
+    }
+    lock[spec.repo] = { ref: spec.ref, commit: head };
+    writeLock(claudeDir, lock);
   };
   const dropMarketplace = (name: string) => {
     state.marketplaces = state.marketplaces.filter((n) => n !== name);
@@ -272,10 +303,15 @@ export async function apply(
         writeState(claudeDir, state);
         await claude.addMarketplace(action.spec.target);
         await register(action.spec);
+        await pin(action.spec, false);
         break;
       case "add-marketplace":
         await claude.addMarketplace(action.spec.target);
         await register(action.spec);
+        await pin(action.spec, false);
+        break;
+      case "pin-marketplace":
+        await pin(action.spec, false);
         break;
       case "set-auto-update":
         await claude.setAutoUpdate(action.name, action.value);
@@ -286,6 +322,7 @@ export async function apply(
         await claude.updateMarketplace(marketplace.name);
         const after = marketplace.installLocation ? await gitHead(marketplace.installLocation) : undefined;
         if (before && after && before !== after) results.push(updateLine("marketplace", action.spec.repo, before, after));
+        await pin(action.spec, true);
         break;
       }
       case "install":

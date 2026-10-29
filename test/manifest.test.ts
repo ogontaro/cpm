@@ -116,16 +116,8 @@ describe("resolveManifest", () => {
     await expect(resolve(local("marketplaces:\n  - x/one#v1\n  - x/one#v2\n"))).rejects.toThrow("複数");
   });
 
-  test("autoUpdate は省略できる。自分の cpm.yml の指定だけが有効", async () => {
-    expect((await resolveManifest(local("plugins: []\n"), source)).autoUpdate).toBeUndefined();
-    expect((await resolveManifest(local("autoUpdate: false\n"), source)).autoUpdate).toBe(false);
-
-    remote["github.com/o/common/cpm.yml"] = "autoUpdate: false\n";
-    expect((await resolveManifest(local("includes:\n  - o/common/cpm.yml\n"), source)).autoUpdate).toBeUndefined();
-  });
-
-  test("autoUpdate が真偽値でなければエラーにする", async () => {
-    await expect(resolve(local("autoUpdate: yes please\n"))).rejects.toThrow("autoUpdate");
+  test("autoUpdate を指定するとエラーにする", async () => {
+    await expect(resolve(local("autoUpdate: false\n"))).rejects.toThrow("autoUpdate");
   });
 
   test("GitHub Enterprise の外部 cpm.yml と marketplace を取り込む", async () => {
@@ -136,12 +128,11 @@ describe("resolveManifest", () => {
   });
 
   test("GitHub 上の cpm.yml を起点にして、ローカルのファイルなしで解決する", async () => {
-    remote["ghe.example.com/o/common/cpm.yml"] = "includes:\n  - o/base/cpm.yml\nmarketplaces:\n  - x/one\nautoUpdate: false\n";
+    remote["ghe.example.com/o/common/cpm.yml"] = "includes:\n  - o/base/cpm.yml\nmarketplaces:\n  - x/one\n";
     remote["github.com/o/base/cpm.yml"] = "plugins:\n  - b@one\n";
     const r = await resolveManifest(parseInclude("ghe.example.com/o/common/cpm.yml"), source);
     expect(r.marketplaces.map((m) => m.raw)).toEqual(["x/one"]);
     expect(r.plugins.map((p) => p.raw)).toEqual(["b@one"]);
-    expect(r.autoUpdate).toBe(false);
   });
 
   test("起点の cpm.yml を自分自身で取り込むと循環としてエラーにする", async () => {

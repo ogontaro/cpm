@@ -26,17 +26,11 @@ interface RawManifest {
   plugins: string[];
   /** includes で取り込んだ plugin のうち、入れない plugin */
   exclude: string[];
-  autoUpdate?: boolean;
 }
 
 export interface Desired {
   marketplaces: MarketplaceSpec[];
   plugins: PluginSpec[];
-  /**
-   * 管理下の marketplace の自動更新。省略時(undefined)は、新しく追加する marketplace だけを ON にし、
-   * 既にある marketplace の設定には触れない
-   */
-  autoUpdate: boolean | undefined;
 }
 
 /** `.json` は JSON、それ以外は YAML として読む */
@@ -55,11 +49,10 @@ export function parseManifest(text: string, file: string): RawManifest {
     }
     return value as string[];
   };
-  const autoUpdate = doc?.autoUpdate;
-  if (autoUpdate !== undefined && typeof autoUpdate !== "boolean") {
-    throw new Error(`${file}: autoUpdate は true か false で指定してください`);
+  if (doc?.autoUpdate !== undefined) {
+    throw new Error(`${file}: autoUpdate は指定できません。lock のコミットを保つため、cpm が管理下の marketplace の自動更新を OFF にします`);
   }
-  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), exclude: list("exclude"), autoUpdate };
+  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), exclude: list("exclude") };
 }
 
 interface Entry<T> {
@@ -144,7 +137,5 @@ export async function resolveManifest(root: string | IncludeSpec, source: Manife
   return {
     marketplaces: [...merged.marketplaces.values()].map((e) => e.spec),
     plugins: [...merged.plugins.values()].map((e) => e.spec),
-    // 自動更新は、取り込んだ cpm.yml ではなく、自分の cpm.yml で決める
-    autoUpdate: parseManifest(text, path).autoUpdate,
   };
 }
