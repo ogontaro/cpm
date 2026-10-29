@@ -1,7 +1,7 @@
 class Cpm < Formula
   desc "Claude Code plugin manager driven by a declarative manifest"
   homepage "https://github.com/ogontaro/cpm"
-  version "0.4.0"
+  version "1.0.0"
   license "MIT"
 
   # homebrew-coreのcpm(CPANモジュールインストーラ)と同名のバイナリを入れる
@@ -10,20 +10,20 @@ class Cpm < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-darwin-arm64.tar.gz"
-      sha256 "12d6b5ab1186501084c205adafb7a2373d033f12220355eeac467df3273d3ed6"
+      sha256 "16c2f064cb2c21af84f30c64d2ee49029a9b940b19732cfaef1fd77b302262f0"
     else
       url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-darwin-amd64.tar.gz"
-      sha256 "7ed75b7ae220720bd6efd588a91593d5202b5d97ffa6d9c67b13de609608dd91"
+      sha256 "66c2d0f38683402e02fc8ffcfbbebf8484bf52763c310a269f6b1f6c3d90177b"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-linux-arm64.tar.gz"
-      sha256 "3f46e4541ef718c743e2e54e9016c679b7c8793edaaadfd786263b1831eef6de"
+      sha256 "8cada1ae304a8514821ab1d180236b4f68d6e335af228407b21c39f36f9f6873"
     else
       url "https://github.com/ogontaro/cpm/releases/download/v#{version}/cpm-linux-amd64.tar.gz"
-      sha256 "bafad67c2ab55eaff3f8569f86f3b4d76cda636ef6634533742cfcf75b9b8470"
+      sha256 "8e14c694e5f37c51c7c56305d3310379e17bbc468efd8e3a9a7a966be07da676"
     end
   end
 
