@@ -37,6 +37,8 @@ export interface Git {
   checkout(dir: string, commit: string): Promise<void>;
   /** from から to への変更ファイル(`A\tpath` の形)。from が null なら to の全ファイル */
   changes(dir: string, from: string | null, to: string): Promise<string[]>;
+  /** locked より新しく、days 日以上前にコミットされた最新のコミット。HEAD が該当すれば HEAD。無ければ null */
+  settled(dir: string, days: number, locked: string): Promise<string | null>;
 }
 
 async function git(dir: string, args: string[]): Promise<string> {
@@ -65,6 +67,23 @@ export const realGit: Git = {
     if (from === null) return (await git(dir, ["ls-tree", "-r", "--name-only", to])).split("\n").map((p) => `A\t${p}`);
     await ensure(dir, from);
     return (await git(dir, ["diff", "--name-status", from, to])).split("\n").filter(Boolean);
+  },
+  async settled(dir, days, locked) {
+    const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+    const committedAt = async (rev: string) => Number(await git(dir, ["log", "-1", "--format=%ct", rev]));
+    let candidate = await git(dir, ["rev-parse", "HEAD"]);
+    if ((await committedAt(candidate)) > cutoff) {
+      // checkout は shallow なので、cutoff 以降の履歴を取り、その最古のコミットの親を「cutoff より前の最新」とする
+      await git(dir, ["fetch", "--quiet", `--shallow-since=${cutoff}`, "origin", candidate]);
+      const oldest = (await git(dir, ["rev-list", "--first-parent", candidate])).split("\n").at(-1)!;
+      const parent = /^parent (\S+)$/m.exec(await git(dir, ["cat-file", "-p", oldest]))?.[1];
+      if (!parent) return null;
+      await ensure(dir, parent);
+      if ((await committedAt(parent)) > cutoff) return null;
+      candidate = parent;
+    }
+    await ensure(dir, locked);
+    return candidate !== locked && (await committedAt(candidate)) > (await committedAt(locked)) ? candidate : null;
   },
 };
 

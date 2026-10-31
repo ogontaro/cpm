@@ -81,6 +81,8 @@ export class FakeClaude implements Claude {
 export class FakeGit implements Git {
   heads: Record<string, string> = {};
   calls: string[] = [];
+  /** settled が返すコミット */
+  settledTo: string | null = null;
 
   async head(dir: string) {
     return (this.heads[dir] ??= "new0000");
@@ -92,5 +94,9 @@ export class FakeGit implements Git {
   async changes(_dir: string, from: string | null, to: string) {
     this.calls.push(`changes ${from}..${to}`);
     return ["A\thooks/hooks.json", "M\tREADME.md"];
+  }
+  async settled(_dir: string, days: number, locked: string) {
+    this.calls.push(`settled ${days}d ${locked}`);
+    return this.settledTo;
   }
 }

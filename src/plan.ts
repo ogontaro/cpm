@@ -221,6 +221,10 @@ export async function apply(
     lock?: Lock;
     /** lock に記録するコミットの内容を見せて、承認を得る */
     approve?: (review: string) => Promise<boolean>;
+    /** 更新で採用する commit の最小の経過日数。新規に固定するときは適用しない */
+    cooldown?: number;
+    /** cooldown を適用せず、最新の commit を採用する */
+    ignoreCooldown?: boolean;
     /** テスト用。既定は git の HEAD を読む */
     gitHead?: (dir: string) => Promise<string | undefined>;
     git?: Git;
@@ -254,10 +258,20 @@ export async function apply(
     if (!lock || !approve) return;
     const dir = (await findMarketplace(spec)).installLocation;
     if (!dir) throw new Error(`marketplace "${spec.repo}" の checkout が見つかりません`);
-    const head = await git.head(dir);
+    let head = await git.head(dir);
     const locked = lockedCommit(lock, spec);
     if (locked === head) return;
     if (locked && !updated) return git.checkout(dir, locked);
+    if (locked && opts.cooldown && !opts.ignoreCooldown) {
+      const settled = await git.settled(dir, opts.cooldown, locked);
+      if (settled === null) {
+        await git.checkout(dir, locked);
+        results.push(`= marketplace ${spec.repo}  (コミットから ${opts.cooldown} 日たっていないので、更新を見送りました)`);
+        return;
+      }
+      if (settled !== head) await git.checkout(dir, settled);
+      head = settled;
+    }
     if (!(await approve(renderReview(spec.repo, locked, head, await git.changes(dir, locked, head))))) {
       if (locked) await git.checkout(dir, locked);
       throw new Error(`${spec.repo} の${locked ? "更新" : "固定"}が承認されなかったので中止しました`);
@@ -320,9 +334,9 @@ export async function apply(
         const marketplace = await findMarketplace(action.spec);
         const before = marketplace.installLocation ? await gitHead(marketplace.installLocation) : undefined;
         await claude.updateMarketplace(marketplace.name);
+        await pin(action.spec, true);
         const after = marketplace.installLocation ? await gitHead(marketplace.installLocation) : undefined;
         if (before && after && before !== after) results.push(updateLine("marketplace", action.spec.repo, before, after));
-        await pin(action.spec, true);
         break;
       }
       case "install":

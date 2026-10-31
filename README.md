@@ -91,6 +91,7 @@ cpm add git-usage@ogontaro-skills
 | `plugins` | `plugin@marketplace` | インストールする plugin |
 | `includes` | `[host/]owner/repo/path/to/cpm.yml[#ref]` | 外部リポジトリにある cpm.yml を読み込む |
 | `exclude` | `plugin@marketplace` | 読み込んだ cpm.yml の plugin のうち、自分は入れないもの |
+| `cooldown` | `7d` | `cpm update` で採用するコミットの最小の経過日数。[公開直後の更新を避ける](#公開直後の更新を避ける) |
 
 さまざまな構成の例は、[docs/cpm-yml-examples.md](docs/cpm-yml-examples.md) を参照してください。
 
@@ -130,6 +131,20 @@ cpm install --remote my-org/claude-config/cpm.yml#v2
 承認の画面には、変更されたファイルの数と、hooks・MCP 設定・スクリプトのファイルが表示されます。承認しなければ、`cpm.lock` のコミットのまま中止します。対話できない環境では `--yes` を付けると、内容を表示するだけで承認として進みます。
 
 固定の単位は marketplace です。固定したコミットを保つため、cpm は管理対象の marketplace の自動更新を OFF にします。
+
+### 公開直後の更新を避ける
+
+`cpm.yml` に `cooldown` を書くと、`cpm update` は、その日数以上前にコミットされた最新のコミットまでしか進みません。悪意のあるコミットが混入しても、発覚して取り下げられるまでの期間を避けられます。
+
+```yaml
+cooldown: 7d
+```
+
+- 対象はブランチに追従する marketplace の `cpm update` です。タグで固定した marketplace と、新しく追加する marketplace には適用しません
+- 日数以上前のコミットが無ければ、`cpm.lock` のコミットのまま、更新を見送ります
+- `cpm update --ignore-cooldown` で、最新のコミットまで更新できます。承認の画面は省略されません
+- 基準はコミットの日時です。コミットの作者は日時を設定できるため、偽装されうる点に注意してください
+- `includes` で読み込んだ `cpm.yml` の `cooldown` は使いません
 
 ## plugin を削除する
 
