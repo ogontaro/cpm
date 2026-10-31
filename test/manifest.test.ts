@@ -39,7 +39,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("parseManifest", () => {
   test("JSON と YAML を拡張子で読み分ける", () => {
-    const expected = { includes: [], marketplaces: ["o/r"], plugins: ["a@r"], exclude: [] };
+    const expected = { includes: [], marketplaces: ["o/r"], plugins: ["a@r"], exclude: [], cooldown: undefined };
     expect(parseManifest('{"marketplaces":["o/r"],"plugins":["a@r"]}', "cpm.json")).toEqual(expected);
     expect(parseManifest("marketplaces:\n  - o/r\nplugins:\n  - a@r\n", "cpm.yml")).toEqual(expected);
   });
@@ -118,6 +118,18 @@ describe("resolveManifest", () => {
 
   test("autoUpdate を指定するとエラーにする", async () => {
     await expect(resolve(local("autoUpdate: false\n"))).rejects.toThrow("autoUpdate");
+  });
+
+  test("cooldown は日数で読み、includes の cooldown は使わない", async () => {
+    remote["github.com/o/a/cpm.yml"] = "cooldown: 30d\nplugins:\n  - a@m\n";
+    expect((await resolveManifest(local("cooldown: 7d\nincludes:\n  - o/a/cpm.yml\n"), source)).cooldown).toBe(7);
+    expect((await resolveManifest(local("includes:\n  - o/a/cpm.yml\n"), source)).cooldown).toBeUndefined();
+  });
+
+  test("cooldown が「7d」の形でなければエラーにする", async () => {
+    for (const bad of ["7", "7h", "-1d", "true"]) {
+      await expect(resolve(local(`cooldown: ${bad}\n`))).rejects.toThrow("cooldown");
+    }
   });
 
   test("GitHub Enterprise の外部 cpm.yml と marketplace を取り込む", async () => {

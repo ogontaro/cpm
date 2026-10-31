@@ -26,11 +26,15 @@ interface RawManifest {
   plugins: string[];
   /** includes で取り込んだ plugin のうち、入れない plugin */
   exclude: string[];
+  /** cpm update が採用する commit の最小の経過日数 */
+  cooldown: number | undefined;
 }
 
 export interface Desired {
   marketplaces: MarketplaceSpec[];
   plugins: PluginSpec[];
+  /** 最初に読んだ cpm.yml の cooldown。includes の cooldown は使わない */
+  cooldown?: number;
 }
 
 /** `.json` は JSON、それ以外は YAML として読む */
@@ -42,7 +46,7 @@ export function parseManifest(text: string, file: string): RawManifest {
     throw new Error(`${file}: 解析できません: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  const list = (key: keyof RawManifest): string[] => {
+  const list = (key: "includes" | "marketplaces" | "plugins" | "exclude"): string[] => {
     const value = doc?.[key] ?? [];
     if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
       throw new Error(`${file}: ${key} は文字列のリストで指定してください`);
@@ -52,7 +56,13 @@ export function parseManifest(text: string, file: string): RawManifest {
   if (doc?.autoUpdate !== undefined) {
     throw new Error(`${file}: autoUpdate は指定できません。lock のコミットを保つため、cpm が管理下の marketplace の自動更新を OFF にします`);
   }
-  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), exclude: list("exclude") };
+  let cooldown: number | undefined;
+  if (doc?.cooldown !== undefined) {
+    const days = typeof doc.cooldown === "string" ? /^(\d+)d$/.exec(doc.cooldown) : null;
+    if (!days) throw new Error(`${file}: cooldown は "7d" のように日数で指定してください`);
+    cooldown = Number(days[1]);
+  }
+  return { includes: list("includes"), marketplaces: list("marketplaces"), plugins: list("plugins"), exclude: list("exclude"), cooldown };
 }
 
 interface Entry<T> {
@@ -66,6 +76,7 @@ interface Merged {
   marketplaces: Map<string, Entry<MarketplaceSpec>>;
   /** plugin@marketplace -> plugin */
   plugins: Map<string, Entry<PluginSpec>>;
+  cooldown: number | undefined;
 }
 
 /**
@@ -91,7 +102,7 @@ export async function resolveManifest(root: string | IncludeSpec, source: Manife
 
   async function load(body: string, file: string, trail: string[]): Promise<Merged> {
     const manifest = parseManifest(body, file);
-    const merged: Merged = { marketplaces: new Map(), plugins: new Map() };
+    const merged: Merged = { marketplaces: new Map(), plugins: new Map(), cooldown: manifest.cooldown };
 
     for (const raw of manifest.includes) {
       const inc = parseInclude(raw);
@@ -137,5 +148,6 @@ export async function resolveManifest(root: string | IncludeSpec, source: Manife
   return {
     marketplaces: [...merged.marketplaces.values()].map((e) => e.spec),
     plugins: [...merged.plugins.values()].map((e) => e.spec),
+    cooldown: merged.cooldown,
   };
 }

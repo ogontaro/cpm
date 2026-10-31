@@ -350,22 +350,36 @@ describe("lock", () => {
   const git = new FakeGit();
   let lock: Lock;
   let reviews: string[];
+  let results: string[];
   const approve = (answer: boolean) => async (review: string) => (reviews.push(review), answer);
 
   beforeEach(() => {
     git.heads = {};
     git.calls = [];
+    git.settledTo = null;
     lock = {};
     reviews = [];
   });
 
   /** cpm install / update の 1 回分(lock あり) */
-  async function installLocked(desired: Desired, opts: { update?: boolean; answer?: boolean } = {}) {
+  async function installLocked(
+    desired: Desired,
+    opts: { update?: boolean; answer?: boolean; cooldown?: number; ignoreCooldown?: boolean } = {},
+  ) {
     const snap = await takeSnapshot(fake, git);
     const state = pruneState(readState(claudeDir), snap);
     const actions = plan(desired, snap, state, { update: opts.update, lock });
     fake.calls = [];
-    await apply(actions, { claude: fake, claudeDir, state, lock, approve: approve(opts.answer ?? true), git });
+    results = await apply(actions, {
+      claude: fake,
+      claudeDir,
+      state,
+      lock,
+      approve: approve(opts.answer ?? true),
+      cooldown: opts.cooldown,
+      ignoreCooldown: opts.ignoreCooldown,
+      git,
+    });
     return actions.map(label);
   }
 
@@ -445,6 +459,41 @@ describe("lock", () => {
       await installLocked(desired);
       await installLocked(desired, { update: true });
       expect(reviews).toEqual([]);
+    });
+
+    describe("cooldown", () => {
+      const start = async () => {
+        lock = { "o/mk": { ref: null, commit: "locked1" } };
+        const desired = want(["o/mk"], ["a@mk"]);
+        await installLocked(desired);
+        advance();
+        return desired;
+      };
+
+      test("cooldown を過ぎた最新のコミットまで更新する", async () => {
+        const desired = await start();
+        git.settledTo = "older00";
+        await installLocked(desired, { update: true, cooldown: 7 });
+        expect(lock["o/mk"]!.commit).toBe("older00");
+        expect(git.heads["/mk"]).toBe("older00");
+        expect(reviews[0]).toContain("locked1 -> older0");
+      });
+
+      test("cooldown を過ぎたコミットが無ければ、lock のコミットのまま承認も求めない", async () => {
+        const desired = await start();
+        await installLocked(desired, { update: true, cooldown: 7 });
+        expect(lock["o/mk"]!.commit).toBe("locked1");
+        expect(git.heads["/mk"]).toBe("locked1");
+        expect(reviews).toEqual([]);
+        expect(results.join("\n")).toContain("7 日たっていないので、更新を見送りました");
+      });
+
+      test("ignoreCooldown なら、cooldown を使わず最新のコミットまで更新する", async () => {
+        const desired = await start();
+        await installLocked(desired, { update: true, cooldown: 7, ignoreCooldown: true });
+        expect(lock["o/mk"]!.commit).toBe("newer00");
+        expect(git.calls.some((c) => c.startsWith("settled"))).toBe(false);
+      });
     });
   });
 });

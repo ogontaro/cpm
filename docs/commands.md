@@ -39,6 +39,7 @@ marketplace は `cpm.lock` のコミットに揃えます。`cpm.lock` に無い
 |---|---|
 | `--dry-run` | 変更内容だけを表示する |
 | `--yes` | 承認を求めず、内容を表示して進める。対話できない環境で使う |
+| `--ignore-cooldown` | `cpm.yml` の `cooldown` を使わず、最新のコミットまで更新する |
 
 ### cpm add
 

@@ -27,8 +27,11 @@ const HELP = `cpm - Claude Code の plugin を cpm.yml から同期する
                                    --remote: クローンせず、GitHub 上の cpm.yml を直接読む
                                              [host/]owner/repo/path/to/cpm.yml[#ref] (host は GitHub Enterprise)
                                    --check:  変更を表示するだけで、差分があれば終了コード 1 にする(CI 向け)
-  cpm update [--dry-run] [--yes]   cpm.yml の内容に揃えつつ、marketplace と plugin を最新に更新する
+  cpm update [--dry-run] [--yes] [--ignore-cooldown]
+                                   cpm.yml の内容に揃えつつ、marketplace と plugin を最新に更新する
                                    コミットが変わる marketplace は、変更内容を表示して承認を求め、cpm.lock を更新する
+                                   cpm.yml に cooldown があれば、その日数以上前にコミットされた最新のコミットまで更新する
+                                   --ignore-cooldown: cooldown を無視して、最新のコミットまで更新する
   cpm add <plugin>@<marketplace>   cpm.yml に plugin を追記してインストールする
                                    <marketplace> は登録済みの名前、または [host/]owner/repo[#ref](未登録なら登録して marketplaces にも追記)
   cpm uninstall <plugin>@<marketplace> [--dry-run]
@@ -52,6 +55,8 @@ interface Context {
   remote: string | undefined;
   /** lock への記録を、承認を求めずに進める */
   yes: boolean;
+  /** cooldown を適用せずに更新する */
+  ignoreCooldown: boolean;
 }
 
 /** cpm.yml は、常に Claude のディレクトリ直下に置く */
@@ -81,10 +86,25 @@ async function list({ claude, claudeDir }: Context): Promise<number> {
 }
 
 /** 操作を適用し、結果の行を返す。操作が無くても、記録から消えたものがあれば記録を更新する */
-async function applyActions(ctx: Context, actions: Action[], stored: State, state: State, lock?: Lock): Promise<string[]> {
+async function applyActions(
+  ctx: Context,
+  actions: Action[],
+  stored: State,
+  state: State,
+  lock?: Lock,
+  cooldown?: number,
+): Promise<string[]> {
   const { claude, claudeDir } = ctx;
   if (actions.length) {
-    return apply(actions, { claude, claudeDir, state, lock, approve: lock && createApprove(ctx.yes) });
+    return apply(actions, {
+      claude,
+      claudeDir,
+      state,
+      lock,
+      approve: lock && createApprove(ctx.yes),
+      cooldown,
+      ignoreCooldown: ctx.ignoreCooldown,
+    });
   } else if (JSON.stringify(stored) !== JSON.stringify(state)) {
     writeState(claudeDir, state);
   }
@@ -106,7 +126,7 @@ async function install(ctx: Context, update: boolean): Promise<number> {
     const drift = actions.some((a) => a.kind !== "adopt-marketplace" && a.kind !== "adopt-plugin");
     return ctx.check && drift ? 1 : 0;
   }
-  const results = await applyActions(ctx, actions, stored, state, lock);
+  const results = await applyActions(ctx, actions, stored, state, lock, desired.cooldown);
   for (const line of results) console.log(line);
   console.log(results.length ? `\n${results.length} 件を適用しました` : "\n変更はありません");
   // cpm.yml から外した marketplace の記録を、lock から消す(--remote は別の cpm.yml なので、手元の lock には触れない)
@@ -214,6 +234,7 @@ async function main(argv: string[]): Promise<number> {
       "dry-run": { type: "boolean", default: false },
       check: { type: "boolean", default: false },
       yes: { type: "boolean", default: false },
+      "ignore-cooldown": { type: "boolean", default: false },
       version: { type: "boolean", short: "v", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -235,6 +256,7 @@ async function main(argv: string[]): Promise<number> {
   if (["uninstall", "cleanup", "add"].includes(command) && values.check) throw new Error(`--check は ${command} では使えません`);
   if (values.yes && !["install", "update", "add"].includes(command)) throw new Error("--yes は install・update・add でだけ使えます");
   if (command === "add" && values["dry-run"]) throw new Error("--dry-run は add では使えません");
+  if (values["ignore-cooldown"] && command !== "update") throw new Error("--ignore-cooldown は update でだけ使えます");
 
   const ctx: Context = {
     claude: createClaude(claudeDir),
@@ -243,6 +265,7 @@ async function main(argv: string[]): Promise<number> {
     check: values.check,
     remote: values.remote,
     yes: values.yes,
+    ignoreCooldown: values["ignore-cooldown"],
   };
   switch (command) {
     case "init":

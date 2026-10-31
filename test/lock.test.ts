@@ -2,8 +2,59 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createApprove, lockedCommit, readLock, renderReview, writeLock } from "../src/lock";
+import { createApprove, lockedCommit, readLock, realGit, renderReview, writeLock } from "../src/lock";
 import { parseMarketplace } from "../src/spec";
+
+describe("realGit.settled", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cpm-settled-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const git = (cwd: string, args: string[], date?: string): string => {
+    const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" };
+    if (date) Object.assign(env, { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
+    const proc = Bun.spawnSync(["git", "-C", cwd, ...args], { env });
+    if (proc.exitCode !== 0) throw new Error(proc.stderr.toString());
+    return proc.stdout.toString().trim();
+  };
+
+  /** 30・20・10・1 日前の 4 コミットを持つリポジトリを作り、depth 1 でクローンする。コミットは古い順 */
+  function setup(): { clone: string; commits: string[] } {
+    const origin = join(dir, "origin");
+    git(dir, ["init", "--quiet", origin]);
+    const commits = [30, 20, 10, 1].map((days) => {
+      const date = `${Math.floor(Date.now() / 1000) - days * 86400} +0000`;
+      git(origin, ["commit", "--quiet", "--allow-empty", "-m", `${days}d`], date);
+      return git(origin, ["rev-parse", "HEAD"]);
+    });
+    const clone = join(dir, "clone");
+    git(dir, ["clone", "--quiet", "--depth", "1", `file://${origin}`, clone]);
+    return { clone, commits };
+  }
+
+  test("経過日数を過ぎた最新のコミットを返す", async () => {
+    const { clone, commits } = setup();
+    expect(await realGit.settled(clone, 7, commits[0]!)).toBe(commits[2]!);
+  });
+
+  test("HEAD が経過日数を過ぎていれば HEAD を返す", async () => {
+    const { clone, commits } = setup();
+    expect(await realGit.settled(clone, 0.5, commits[0]!)).toBe(commits[3]!);
+  });
+
+  test("lock のコミットより新しいものが無ければ null", async () => {
+    const { clone, commits } = setup();
+    expect(await realGit.settled(clone, 7, commits[2]!)).toBeNull();
+    expect(await realGit.settled(clone, 7, commits[3]!)).toBeNull();
+  });
+
+  test("経過日数を過ぎたコミットが履歴に無ければ null", async () => {
+    const { clone, commits } = setup();
+    expect(await realGit.settled(clone, 60, commits[0]!)).toBeNull();
+  });
+});
 
 describe("lock ファイル", () => {
   let dir: string;
