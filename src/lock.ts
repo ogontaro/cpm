@@ -44,7 +44,7 @@ export interface Git {
 async function git(dir: string, args: string[]): Promise<string> {
   const proc = Bun.spawn(["git", "-C", dir, ...args], { stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
-  if (code !== 0) throw new Error(`git ${args.join(" ")} に失敗しました: ${err.trim().split("\n").at(-1) ?? `終了コード ${code}`}`);
+  if (code !== 0) throw new Error(`git -C ${dir} ${args.join(" ")} に失敗しました: ${err.trim().split("\n").at(-1) ?? `終了コード ${code}`}`);
   return out.trim();
 }
 
