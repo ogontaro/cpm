@@ -22,6 +22,7 @@ const HELP = `cpm - Claude Code の plugin を cpm.yml から同期する
   cpm init                         今の環境から cpm.yml を作る(既にあれば作らない)
   cpm install [--dry-run | --check | --remote <repo>] [--yes]
                                    cpm.yml の内容に揃える(追加・削除)。marketplace は cpm.lock のコミットに固定する
+                                   git で取得しない marketplace(Claude Code が GCS から取得するもの)は固定しない
                                    cpm.lock に無い marketplace は、内容を表示して承認を求めてから記録する
                                    --yes:    承認を求めず、表示だけして進める(対話できない環境向け)
                                    --remote: クローンせず、GitHub 上の cpm.yml を直接読む

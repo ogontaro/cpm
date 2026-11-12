@@ -131,7 +131,8 @@ export function plan(desired: Desired, snap: Snapshot, state: State, opts: { upd
       }
       if (opts.update) {
         marketUpdates.push({ kind: "update-marketplace", spec });
-      } else if (opts.lock) {
+      } else if (opts.lock && current.head) {
+        // checkout の HEAD を読めない marketplace(Claude Code が git 以外で取得するもの)は、固定の対象外
         const commit = lockedCommit(opts.lock, spec);
         if (commit === null || current.head !== commit) pins.push({ kind: "pin-marketplace", spec, commit });
       }
@@ -258,7 +259,12 @@ export async function apply(
     if (!lock || !approve) return;
     const dir = (await findMarketplace(spec)).installLocation;
     if (!dir) throw new Error(`marketplace "${spec.repo}" の checkout が見つかりません`);
-    let head = await git.head(dir);
+    let head: string;
+    try {
+      head = await git.head(dir);
+    } catch {
+      return; // Claude Code が git 以外で取得する marketplace は、固定も戻すこともできない
+    }
     const locked = lockedCommit(lock, spec);
     if (locked === head) return;
     if (locked && !updated) return git.checkout(dir, locked);

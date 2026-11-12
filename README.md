@@ -132,6 +132,8 @@ cpm install --remote my-org/claude-config/cpm.yml#v2
 
 固定の単位は marketplace です。固定したコミットを保つため、cpm は管理対象の marketplace の自動更新を OFF にします。
 
+Claude Code が git を使わずに取得する marketplace(`.git` が無く `.gcs-sha` だけがあるもの)は、cpm からコミットを指定できないため固定の対象外です。その marketplace は Claude Code の管理に任せます。
+
 ### 公開直後の更新を避ける
 
 `cpm.yml` に `cooldown` を書くと、`cpm update` は、その日数以上前にコミットされた最新のコミットまでしか進みません。悪意のあるコミットが混入しても、発覚して取り下げられるまでの期間を避けられます。

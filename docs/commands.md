@@ -29,7 +29,7 @@ cpm のすべてのコマンドとオプションの一覧です。
 | `--remote <repo>` | ローカルの `cpm.yml` の代わりに、リポジトリにある `cpm.yml` をクローンせずに直接読む。`<repo>` は `[host/]owner/repo/path/to/cpm.yml[#ref]` |
 | `--yes` | `cpm.lock` に無い marketplace の承認を求めず、内容を表示して進める。対話できない環境で使う |
 
-marketplace は `cpm.lock` のコミットに揃えます。`cpm.lock` に無い marketplace は、内容を表示して承認を求め、承認すると記録します。
+marketplace は `cpm.lock` のコミットに揃えます。`cpm.lock` に無い marketplace は、内容を表示して承認を求め、承認すると記録します。Claude Code が git を使わずに取得する marketplace は、コミットを指定できないため固定しません。
 
 ### cpm update
 

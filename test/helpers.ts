@@ -81,10 +81,13 @@ export class FakeClaude implements Claude {
 export class FakeGit implements Git {
   heads: Record<string, string> = {};
   calls: string[] = [];
+  /** git リポジトリでない checkout */
+  missing = new Set<string>();
   /** settled が返すコミット */
   settledTo: string | null = null;
 
   async head(dir: string) {
+    if (this.missing.has(dir)) throw new Error(`not a git repository: ${dir}`);
     return (this.heads[dir] ??= "new0000");
   }
   async checkout(dir: string, commit: string) {

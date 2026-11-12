@@ -356,6 +356,7 @@ describe("lock", () => {
   beforeEach(() => {
     git.heads = {};
     git.calls = [];
+    git.missing.clear();
     git.settledTo = null;
     lock = {};
     reviews = [];
@@ -413,6 +414,17 @@ describe("lock", () => {
     git.heads["/mk"] = "drift00";
     expect(await installLocked(desired)).toEqual(["pin-marketplace o/mk"]);
     expect(git.heads["/mk"]).toBe("locked1");
+  });
+
+  test("git で取得しない marketplace は、lock に記録せず固定もしない", async () => {
+    git.missing.add("/mk");
+    const desired = want(["o/mk"], ["a@mk"]);
+    expect(await installLocked(desired)).not.toContain("pin-marketplace o/mk");
+    await installLocked(desired, { update: true });
+    expect(lock).toEqual({});
+    expect(reviews).toEqual([]);
+    expect(fake.plugins.has("a@mk")).toBe(true);
+    expect(fake.calls).toEqual(["update-marketplace mk", "update a@mk"]);
   });
 
   test("cpm.yml の ref を変えると、lock のコミットは使わず、改めて承認を得る", async () => {
